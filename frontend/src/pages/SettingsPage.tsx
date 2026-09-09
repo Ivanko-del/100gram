@@ -1,22 +1,20 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, ApiError } from "../api/client";
+import { DataError, buyPremium, subscribeTransactions, transferGrams, updateProfile } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
+import { AVATAR_COLORS, PREMIUM_PLANS } from "../constants";
 import { PremiumPlan, User, WalletTransaction } from "../types";
 import Avatar from "../components/Avatar";
 
 type Tab = "profile" | "wallet" | "premium" | "appearance";
 
-const COLORS = ["#6ab2f2", "#e17076", "#8774e1", "#54cb68", "#f0a72a", "#faa774", "#c650a1"];
-
 interface TabProps {
   user: User;
-  updateUserLocal: (patch: Partial<User>) => void;
 }
 
 export default function SettingsPage() {
   const navigate = useNavigate();
-  const { user, updateUserLocal, logout } = useAuth();
+  const { user, logout } = useAuth();
   const [tab, setTab] = useState<Tab>("profile");
 
   if (!user) return null;
@@ -47,22 +45,22 @@ export default function SettingsPage() {
             ⭐ Преміум
           </button>
         </nav>
-        <button className="logout-btn" onClick={logout}>
+        <button className="logout-btn" onClick={() => logout()}>
           Вийти
         </button>
       </aside>
 
       <main className="settings-content">
-        {tab === "profile" && <ProfileTab user={user} updateUserLocal={updateUserLocal} />}
+        {tab === "profile" && <ProfileTab user={user} />}
         {tab === "appearance" && <AppearanceTab />}
-        {tab === "wallet" && <WalletTab user={user} updateUserLocal={updateUserLocal} />}
-        {tab === "premium" && <PremiumTab user={user} updateUserLocal={updateUserLocal} />}
+        {tab === "wallet" && <WalletTab user={user} />}
+        {tab === "premium" && <PremiumTab user={user} />}
       </main>
     </div>
   );
 }
 
-function ProfileTab({ user, updateUserLocal }: TabProps) {
+function ProfileTab({ user }: TabProps) {
   const [displayName, setDisplayName] = useState(user.displayName);
   const [bio, setBio] = useState(user.bio);
   const [avatarColor, setAvatarColor] = useState(user.avatarColor);
@@ -76,12 +74,11 @@ function ProfileTab({ user, updateUserLocal }: TabProps) {
     setError(null);
     setSaved(false);
     try {
-      const updated = await api.patch<User>("/users/me", { displayName, bio, avatarColor });
-      updateUserLocal(updated);
+      await updateProfile(user.id, { displayName, bio, avatarColor });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch (e2) {
-      setError(e2 instanceof ApiError ? e2.message : "Не вдалося зберегти");
+    } catch {
+      setError("Не вдалося зберегти");
     } finally {
       setSaving(false);
     }
@@ -100,7 +97,7 @@ function ProfileTab({ user, updateUserLocal }: TabProps) {
       </label>
       <label>Колір аватара</label>
       <div className="color-swatches">
-        {COLORS.map((c) => (
+        {AVATAR_COLORS.map((c) => (
           <button
             type="button"
             key={c}
@@ -143,37 +140,30 @@ function AppearanceTab() {
   );
 }
 
-function WalletTab({ user, updateUserLocal }: TabProps) {
-  const [data, setData] = useState<{ grams: number; transactions: WalletTransaction[] } | null>(null);
+function WalletTab({ user }: TabProps) {
+  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [toUsername, setToUsername] = useState("");
   const [amount, setAmount] = useState(50);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
-  async function load() {
-    const res = await api.get<{ grams: number; transactions: WalletTransaction[] }>("/wallet");
-    setData(res);
-    updateUserLocal({ grams: res.grams });
-  }
-
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const unsub = subscribeTransactions(user.id, setTransactions);
+    return unsub;
+  }, [user.id]);
 
   async function onTransfer(e: FormEvent) {
     e.preventDefault();
     setSending(true);
     setError(null);
     try {
-      await api.post("/wallet/transfer", { username: toUsername.trim(), amount, note: note.trim() || undefined });
+      await transferGrams(user.id, user.username, toUsername.trim(), amount, note.trim() || null);
       setToUsername("");
       setNote("");
       setAmount(50);
-      await load();
     } catch (e2) {
-      setError(e2 instanceof ApiError ? e2.message : "Не вдалося переказати");
+      setError(e2 instanceof DataError ? e2.message : "Не вдалося переказати");
     } finally {
       setSending(false);
     }
@@ -183,12 +173,12 @@ function WalletTab({ user, updateUserLocal }: TabProps) {
     <div className="settings-panel">
       <h2>Гаманець</h2>
       <div className="wallet-balance">
-        <span className="wallet-balance-amount">{data?.grams ?? user.grams}</span>
+        <span className="wallet-balance-amount">{user.grams}</span>
         <span className="wallet-balance-label">ГРАМ 🥃</span>
       </div>
 
       <form className="transfer-form" onSubmit={onTransfer}>
-        <h3>Переказати друзу</h3>
+        <h3>Переказати другу</h3>
         <label>
           Username отримувача
           <input value={toUsername} onChange={(e) => setToUsername(e.target.value)} placeholder="olha" />
@@ -215,8 +205,8 @@ function WalletTab({ user, updateUserLocal }: TabProps) {
 
       <h3>Історія</h3>
       <div className="tx-list">
-        {(data?.transactions.length ?? 0) === 0 && <div className="empty-hint">Ще немає транзакцій</div>}
-        {data?.transactions.map((t) => (
+        {transactions.length === 0 && <div className="empty-hint">Ще немає транзакцій</div>}
+        {transactions.map((t) => (
           <div key={t.id} className="tx-row">
             <div className="tx-icon">
               {t.type === "premium_purchase" ? "⭐" : t.type === "welcome_bonus" ? "🎁" : t.direction === "in" ? "⬇️" : "⬆️"}
@@ -244,29 +234,20 @@ function WalletTab({ user, updateUserLocal }: TabProps) {
   );
 }
 
-function PremiumTab({ user, updateUserLocal }: TabProps) {
-  const [plans, setPlans] = useState<PremiumPlan[]>([]);
+function PremiumTab({ user }: TabProps) {
   const [buying, setBuying] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-
-  useEffect(() => {
-    api.get<PremiumPlan[]>("/premium/plans").then(setPlans);
-  }, []);
 
   async function buy(plan: PremiumPlan) {
     setBuying(plan.id);
     setError(null);
     setSuccess(null);
     try {
-      const res = await api.post<{ isPremium: boolean; premiumUntil: string; grams: number }>(
-        "/premium/subscribe",
-        { planId: plan.id }
-      );
-      updateUserLocal({ isPremium: res.isPremium, premiumUntil: res.premiumUntil, grams: res.grams });
-      setSuccess(`Преміум активовано до ${new Date(res.premiumUntil).toLocaleDateString("uk-UA")}`);
+      await buyPremium(user.id, plan);
+      setSuccess(`Преміум активовано: ${plan.label} ✓`);
     } catch (e2) {
-      setError(e2 instanceof ApiError ? e2.message : "Не вдалося оформити преміум");
+      setError(e2 instanceof DataError ? e2.message : "Не вдалося оформити преміум");
     } finally {
       setBuying(null);
     }
@@ -288,7 +269,7 @@ function PremiumTab({ user, updateUserLocal }: TabProps) {
       {error && <div className="auth-error">{error}</div>}
       {success && <div className="auth-success">{success}</div>}
       <div className="premium-plans">
-        {plans.map((plan) => (
+        {PREMIUM_PLANS.map((plan) => (
           <div className="plan-card" key={plan.id}>
             <div className="plan-label">{plan.label}</div>
             <div className="plan-price">{plan.price} 🥃</div>

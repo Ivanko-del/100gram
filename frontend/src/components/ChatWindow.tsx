@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api/client";
+import { sendMessage as sendMessageApi, setTyping, subscribeMessages, subscribeTyping } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
-import { useSocket } from "../context/SocketContext";
 import { ChatMessage, ChatSummary } from "../types";
 import Avatar from "./Avatar";
 import MessageBubble from "./MessageBubble";
@@ -9,78 +8,54 @@ import MessageInput from "./MessageInput";
 
 interface Props {
   chat: ChatSummary;
-  onMessageSent: (chatId: string, message: ChatMessage) => void;
 }
 
-export default function ChatWindow({ chat, onMessageSent }: Props) {
+export default function ChatWindow({ chat }: Props) {
   const { user } = useAuth();
-  const { socket } = useSocket();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [typingUser, setTypingUser] = useState<string | null>(null);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const typingClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
     setMessages([]);
-    api.get<ChatMessage[]>(`/chats/${chat.id}/messages`).then((data) => {
-      if (!cancelled) {
-        setMessages(data);
-        setLoading(false);
-      }
+    const unsub = subscribeMessages(chat.id, (msgs) => {
+      setMessages(msgs);
+      setLoading(false);
     });
-    socket?.emit("chat:join", chat.id);
-    return () => {
-      cancelled = true;
-    };
-  }, [chat.id, socket]);
+    return unsub;
+  }, [chat.id]);
 
   useEffect(() => {
-    if (!socket) return;
-    function onNewMessage(msg: ChatMessage) {
-      if (msg.chatId !== chat.id) return;
-      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
-      onMessageSent(chat.id, msg);
-    }
-    function onTyping(data: { chatId: string; userId: string; username: string; isTyping: boolean }) {
-      if (data.chatId !== chat.id || data.userId === user?.id) return;
-      if (typingClearRef.current) clearTimeout(typingClearRef.current);
-      if (data.isTyping) {
-        setTypingUser(data.username);
-        typingClearRef.current = setTimeout(() => setTypingUser(null), 2500);
-      } else {
-        setTypingUser(null);
-      }
-    }
-    socket.on("message:new", onNewMessage);
-    socket.on("typing", onTyping);
-    return () => {
-      socket.off("message:new", onNewMessage);
-      socket.off("typing", onTyping);
-    };
-  }, [socket, chat.id, user?.id, onMessageSent]);
+    if (!user) return;
+    const unsub = subscribeTyping(chat.id, user.id, setTypingUsers);
+    return unsub;
+  }, [chat.id, user?.id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
+  useEffect(() => {
+    return () => {
+      if (user) setTyping(chat.id, user.id, user.displayName, false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.id]);
+
   function sendMessage(content: string) {
-    if (!socket) return;
-    socket.emit("message:send", { chatId: chat.id, content }, (res: { error?: string }) => {
-      if (res?.error) {
-        // eslint-disable-next-line no-console
-        console.error(res.error);
-      }
-    });
+    if (!user) return;
+    sendMessageApi(chat.id, user, content).catch(() => {});
   }
 
   function handleTyping(isTyping: boolean) {
-    socket?.emit("typing", { chatId: chat.id, isTyping });
+    if (!user) return;
+    setTyping(chat.id, user.id, user.displayName, isTyping).catch(() => {});
   }
 
   const isGroup = chat.isGroup;
+  const typingLabel = typingUsers.length > 0 ? `${typingUsers.join(", ")} друкує…` : null;
 
   return (
     <section className="chat-window">
@@ -89,7 +64,7 @@ export default function ChatWindow({ chat, onMessageSent }: Props) {
         <div>
           <div className="chat-window-title">{chat.name}</div>
           <div className="chat-window-subtitle">
-            {typingUser ? `${typingUser} друкує…` : isGroup ? `${chat.members.length} учасників` : "в мережі"}
+            {typingLabel ?? (isGroup ? `${chat.members.length} учасників` : "в мережі")}
           </div>
         </div>
       </header>
@@ -105,7 +80,7 @@ export default function ChatWindow({ chat, onMessageSent }: Props) {
         <div ref={bottomRef} />
       </div>
 
-      <MessageInput onSend={sendMessage} onTyping={handleTyping} disabled={!socket} />
+      <MessageInput onSend={sendMessage} onTyping={handleTyping} disabled={!user} />
     </section>
   );
 }

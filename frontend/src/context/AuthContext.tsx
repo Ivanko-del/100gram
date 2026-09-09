@@ -1,99 +1,92 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
-import { api, ApiError } from "../api/client";
+import type { User as FirebaseAuthUser } from "firebase/auth";
+import { DataError, loginUser, logoutUser, registerUser, subscribeUser, watchAuth } from "../data/firestore-api";
 import { User } from "../types";
 
 interface AuthContextValue {
   user: User | null;
-  token: string | null;
+  uid: string | null;
   loading: boolean;
   error: string | null;
-  login: (usernameOrEmail: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string, displayName: string) => Promise<void>;
-  logout: () => void;
-  refreshUser: () => Promise<void>;
-  updateUserLocal: (patch: Partial<User>) => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function errMsg(e: unknown, fallback: string): string {
+  if (e instanceof DataError) return e.message;
+  const code = (e as { code?: string })?.code;
+  switch (code) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+      return "Невірний email або пароль";
+    case "auth/email-already-in-use":
+      return "Ця пошта вже зареєстрована";
+    case "auth/weak-password":
+      return "Пароль — мінімум 6 символів";
+    case "auth/invalid-email":
+      return "Некоректний email";
+    default:
+      return fallback;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem("stogram_token"));
+  const [uid, setUid] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshUser = useCallback(async () => {
-    if (!localStorage.getItem("stogram_token")) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
-    try {
-      const me = await api.get<User>("/users/me");
-      setUser(me);
-    } catch {
-      localStorage.removeItem("stogram_token");
-      setToken(null);
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    const unsub = watchAuth((fbUser: FirebaseAuthUser | null) => {
+      setUid(fbUser ? fbUser.uid : null);
+      if (!fbUser) {
+        setUser(null);
+        setLoading(false);
+      }
+    });
+    return unsub;
   }, []);
 
   useEffect(() => {
-    refreshUser();
-  }, [refreshUser]);
+    if (!uid) return;
+    const unsub = subscribeUser(uid, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
+    return unsub;
+  }, [uid]);
 
-  const login = useCallback(async (usernameOrEmail: string, password: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     setError(null);
     try {
-      const res = await api.post<{ token: string; user: User }>("/auth/login", {
-        usernameOrEmail,
-        password,
-      });
-      localStorage.setItem("stogram_token", res.token);
-      setToken(res.token);
-      setUser(res.user);
+      await loginUser(email, password);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Помилка входу");
+      setError(errMsg(e, "Помилка входу"));
       throw e;
     }
   }, []);
 
-  const register = useCallback(
-    async (username: string, email: string, password: string, displayName: string) => {
-      setError(null);
-      try {
-        const res = await api.post<{ token: string; user: User }>("/auth/register", {
-          username,
-          email,
-          password,
-          displayName,
-        });
-        localStorage.setItem("stogram_token", res.token);
-        setToken(res.token);
-        setUser(res.user);
-      } catch (e) {
-        setError(e instanceof ApiError ? e.message : "Помилка реєстрації");
-        throw e;
-      }
-    },
-    []
-  );
-
-  const logout = useCallback(() => {
-    localStorage.removeItem("stogram_token");
-    setToken(null);
-    setUser(null);
+  const register = useCallback(async (username: string, email: string, password: string, displayName: string) => {
+    setError(null);
+    try {
+      await registerUser(username, email, password, displayName);
+    } catch (e) {
+      setError(errMsg(e, "Помилка реєстрації"));
+      throw e;
+    }
   }, []);
 
-  const updateUserLocal = useCallback((patch: Partial<User>) => {
-    setUser((prev) => (prev ? { ...prev, ...patch } : prev));
+  const logout = useCallback(async () => {
+    await logoutUser();
   }, []);
 
   const value = useMemo(
-    () => ({ user, token, loading, error, login, register, logout, refreshUser, updateUserLocal }),
-    [user, token, loading, error, login, register, logout, refreshUser, updateUserLocal]
+    () => ({ user, uid, loading, error, login, register, logout }),
+    [user, uid, loading, error, login, register, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

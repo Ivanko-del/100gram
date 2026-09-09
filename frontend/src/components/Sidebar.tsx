@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, ApiError } from "../api/client";
+import { DataError, searchUsers, startDirectChat } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
 import { ChatSummary, PublicUser } from "../types";
 import Avatar from "./Avatar";
@@ -37,7 +37,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
     setSearching(true);
     const handle = setTimeout(async () => {
       try {
-        const res = await api.get<PublicUser[]>(`/users/search?q=${encodeURIComponent(q)}`);
+        const res = await searchUsers(q, user?.id ?? "");
         setResults(res);
       } catch {
         setResults([]);
@@ -46,20 +46,21 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
       }
     }, 300);
     return () => clearTimeout(handle);
-  }, [query]);
+  }, [query, user?.id]);
 
   const filteredChats = chats.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()));
 
   async function startChat(username: string) {
+    if (!user) return;
     setErrorMsg(null);
     try {
-      const res = await api.post<{ id: string }>("/chats/direct", { username });
+      const chatId = await startDirectChat(user, username);
       setQuery("");
       setResults([]);
-      onChatCreated(res.id);
-      navigate(`/chat/${res.id}`);
+      onChatCreated(chatId);
+      navigate(`/chat/${chatId}`);
     } catch (e) {
-      setErrorMsg(e instanceof ApiError ? e.message : "Не вдалося створити чат");
+      setErrorMsg(e instanceof DataError ? e.message : "Не вдалося створити чат");
     }
   }
 

@@ -1,0 +1,70 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // username -> uid reservation, used to enforce unique usernames and
+    // to look up a chat/transfer target by @username.
+    match /usernames/{username} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(uid);
+      // Profile fields are self-editable. This does not stop a client from
+      // rewriting its own `grams`/`isPremium` directly - real money-grade
+      // integrity would need Cloud Functions to own those fields server-side.
+      // Fine for a play-currency demo; do not store anything sensitive here.
+      allow update: if isOwner(uid)
+        && request.resource.data.username == resource.data.username
+        && request.resource.data.usernameLower == resource.data.usernameLower;
+      allow delete: if false;
+
+      match /transactions/{txId} {
+        allow read: if isOwner(uid);
+        // A transfer/premium purchase needs to write into BOTH the sender's
+        // and the recipient's transaction history in one client call, so
+        // any signed-in user may create a doc here as long as they are
+        // named as its counterpart (i.e. they are the other side of it).
+        allow create: if isOwner(uid)
+          || (isSignedIn() && request.resource.data.counterpart == request.auth.uid);
+        allow update, delete: if false;
+      }
+    }
+
+    match /chats/{chatId} {
+      // `resource == null` covers the "does this chat already exist"
+      // probe a client makes before creating a new direct chat: the doc
+      // isn't there yet, so there is no membership to check.
+      allow read: if isSignedIn() && (resource == null || request.auth.uid in resource.data.memberUids);
+      allow create: if isSignedIn() && request.auth.uid in request.resource.data.memberUids;
+      allow update: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.memberUids;
+        allow create: if isSignedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.memberUids
+          && request.resource.data.senderUid == request.auth.uid;
+        allow update, delete: if false;
+      }
+
+      match /typing/{uid} {
+        allow read: if isSignedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.memberUids;
+        allow write: if isOwner(uid);
+      }
+    }
+  }
+}

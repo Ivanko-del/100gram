@@ -1,63 +1,82 @@
 # 🥃 100 ГРАМ
 
 Свій Telegram, але «100 ГРАМ» — месенджер у реальному часі з реєстрацією, чатами,
-власною валютою (ГРАМи) та преміум-підпискою.
+власною валютою (ГРАМи) та преміум-підпискою. Статичний фронтенд на React,
+весь бекенд — Firebase (Auth + Firestore), тому окремого сервера немає.
 
 ## Що всередині
 
-- **Реєстрація та вхід** — email/username + пароль, JWT-автентифікація, вітальний бонус 500 ГРАМів
-- **Чати в реальному часі** — приватні та групові чати на Socket.IO (миттєві повідомлення, індикатор "друкує…", присутність онлайн)
+- **Реєстрація та вхід** — email + пароль через Firebase Auth, вітальний бонус 500 ГРАМів
+- **Чати в реальному часі** — приватні чати з живими оновленнями через Firestore, індикатор "друкує…"
 - **Пошук користувачів** — знайти будь-кого за `@username` і почати чат
-- **Гаманець "ГРАМи"** — власна валюта застосунку: переказ ГРАМів іншим користувачам, історія транзакцій
+- **Гаманець "ГРАМи"** — власна валюта застосунку: атомарні перекази між користувачами (Firestore transactions), історія транзакцій
 - **Преміум-підписка** — плани на 1/6/12 місяців, оплата ГРАМами, бейдж ⭐ біля імені
 - **Налаштування** — редагування профілю (ім'я, опис, колір аватара), світла/темна тема
 
 ## Стек
 
-- **Backend**: Node.js, Express, TypeScript, Prisma + SQLite, Socket.IO, JWT, bcrypt, Zod
-- **Frontend**: React 18, TypeScript, Vite, React Router, socket.io-client
+- **Frontend**: React 18, TypeScript, Vite, React Router
+- **Backend**: Firebase Authentication + Cloud Firestore (жодного власного сервера — фронтенд статичний і йде прямо на Vercel)
 
-## Запуск
+## Налаштування Firebase (один раз)
 
-### 1. Backend
+1. Створи проєкт на [console.firebase.google.com](https://console.firebase.google.com)
+2. **Authentication → Sign-in method** → увімкни **Email/Password**
+3. **Firestore Database** → створи базу (Production mode)
+4. **Firestore → Rules** → встав вміст файлу [`firestore.rules`](./firestore.rules) з кореня цього репозиторію і опублікуй
+5. **Project settings → General → Your apps** → додай Web-застосунок, скопіюй `firebaseConfig`
+6. Встав ці значення у `frontend/src/firebase.ts` замість `"REPLACE_ME"`
 
-```bash
-cd backend
-cp .env.example .env
-npm install
-npx prisma migrate dev --name init
-npm run seed      # створює демо-акаунти anton / olha (пароль: password123)
-npm run dev        # http://localhost:4000
-```
+Значення `firebaseConfig` (apiKey, authDomain, projectId…) публічні за задумом Firebase —
+безпеку забезпечують Firestore Security Rules, а не приховування цих полів,
+тому їх спокійно можна тримати прямо в коді фронтенду.
 
-### 2. Frontend
+## Запуск локально
 
 ```bash
 cd frontend
 npm install
-npm run dev         # http://localhost:5173 (проксує /api та /socket.io на бекенд)
+npm run dev   # http://localhost:5173
 ```
 
-Відкрий http://localhost:5173, зареєструйся або увійди демо-акаунтом
-(`anton` / `password123`, `olha` / `password123`) і почни спілкування.
+## Деплой на Vercel
+
+Це звичайний статичний Vite-застосунок — жодних змінних середовища не потрібно
+(конфіг Firebase уже в коді). Framework Preset: Vite, Root Directory: `frontend`,
+Build Command: `npm run build`, Output Directory: `dist`.
 
 ## Структура проєкту
 
 ```
-backend/
-  prisma/schema.prisma   # User, Chat, ChatMember, Message, Transaction
-  src/
-    routes/               # auth, users, chats, wallet, premium
-    sockets/chat.ts        # реалтайм повідомлення, typing, presence
-    middleware/auth.ts     # JWT middleware
+firestore.rules          # Security Rules для Firestore (users, chats, messages, транзакції)
 frontend/
   src/
-    pages/                # Login, Register, ChatPage, SettingsPage
+    firebase.ts            # ініціалізація Firebase (App, Auth, Firestore)
+    data/firestore-api.ts  # весь доступ до даних: auth, users, chats, messages, гаманець, преміум
+    pages/                 # Login, Register, ChatPage, SettingsPage
     components/            # Sidebar, ChatWindow, MessageBubble, MessageInput, Avatar
-    context/                # AuthContext, SocketContext
+    context/AuthContext.tsx
 ```
+
+## Модель даних Firestore
+
+```
+usernames/{usernameLower}          -> { uid }                      // унікальність username
+users/{uid}                        -> профіль, ГРАМи, преміум
+users/{uid}/transactions/{txId}    -> історія гаманця
+chats/{chatId}                     -> memberUids, memberProfiles, lastMessage
+chats/{chatId}/messages/{msgId}    -> повідомлення (реалтайм через onSnapshot)
+chats/{chatId}/typing/{uid}        -> ефемерний індикатор "друкує…"
+```
+
+Пряме повідомлення має детермінований id `dm_<uidA>_<uidB>` (uid відсортовані),
+тому повторний пошук того самого співрозмовника відкриває той самий чат.
 
 ## Валюта ГРАМ
 
-Кожен новий користувач отримує 500 ГРАМів на старт. ГРАМи можна переказувати
-іншим користувачам через гаманець у налаштуваннях або витрачати на преміум-підписку.
+Кожен новий користувач отримує 500 ГРАМів на старт. Перекази та покупка преміуму
+виконуються через `runTransaction` у Firestore — атомарно, без гонки станів.
+Це ігрова валюта: правила Firestore не можуть повністю заборонити клієнту
+редагувати власне поле `grams` напряму (для цього знадобились би Cloud Functions
+на платному плані) — прийнятний компроміс для несерйозного застосунку, але
+не варто зберігати тут щось цінне.

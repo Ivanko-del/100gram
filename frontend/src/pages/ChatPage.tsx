@@ -1,56 +1,31 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api } from "../api/client";
-import { useSocket } from "../context/SocketContext";
+import { subscribeChats } from "../data/firestore-api";
+import { useAuth } from "../context/AuthContext";
 import Sidebar from "../components/Sidebar";
 import ChatWindow from "../components/ChatWindow";
-import { ChatMessage, ChatSummary } from "../types";
+import { ChatSummary } from "../types";
 
 export default function ChatPage() {
   const { chatId } = useParams();
   const navigate = useNavigate();
-  const { socket } = useSocket();
+  const { user } = useAuth();
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const loadChats = useCallback(async () => {
-    const data = await api.get<ChatSummary[]>("/chats");
-    setChats(data);
-    setLoading(false);
-  }, []);
-
   useEffect(() => {
-    loadChats();
-  }, [loadChats]);
-
-  useEffect(() => {
-    if (!socket) return;
-    function onNewMessage(msg: ChatMessage) {
-      setChats((prev) => {
-        const idx = prev.findIndex((c) => c.id === msg.chatId);
-        if (idx === -1) {
-          loadChats();
-          return prev;
-        }
-        const updated = [...prev];
-        updated[idx] = {
-          ...updated[idx],
-          lastMessage: { content: msg.content, createdAt: msg.createdAt, senderId: msg.sender.id },
-          updatedAt: msg.createdAt,
-        };
-        return updated.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-      });
-    }
-    socket.on("message:new", onNewMessage);
-    return () => {
-      socket.off("message:new", onNewMessage);
-    };
-  }, [socket, loadChats]);
+    if (!user) return;
+    setLoading(true);
+    const unsub = subscribeChats(user.id, (data) => {
+      setChats(data);
+      setLoading(false);
+    });
+    return unsub;
+  }, [user?.id]);
 
   const activeChat = chats.find((c) => c.id === chatId);
 
   function handleChatCreated(id: string) {
-    loadChats();
     navigate(`/chat/${id}`);
   }
 
@@ -58,7 +33,7 @@ export default function ChatPage() {
     <div className="app-layout">
       <Sidebar chats={chats} activeChatId={chatId} onChatCreated={handleChatCreated} />
       {activeChat ? (
-        <ChatWindow chat={activeChat} onMessageSent={() => {}} />
+        <ChatWindow chat={activeChat} />
       ) : (
         <div className="chat-window-empty">
           {loading ? "Завантаження чатів…" : (

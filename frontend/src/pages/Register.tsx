@@ -1,6 +1,9 @@
 import { FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { firebaseConfigured } from "../firebase";
+
+const USERNAME_RE = /^[a-zA-Z0-9_]{3,24}$/;
 
 export default function Register() {
   const { register } = useAuth();
@@ -14,9 +17,22 @@ export default function Register() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    const trimmedUsername = username.trim();
+    if (!USERNAME_RE.test(trimmedUsername)) {
+      setError("Username: 3-24 символи, латиниця/цифри/підкреслення");
+      return;
+    }
+    if (!displayName.trim()) {
+      setError("Вкажи ім'я");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Пароль — мінімум 6 символів");
+      return;
+    }
     setSubmitting(true);
     try {
-      await register(username.trim(), email.trim(), password, displayName.trim() || username.trim());
+      await register(trimmedUsername, email.trim(), password, displayName.trim());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка реєстрації");
     } finally {
@@ -30,6 +46,10 @@ export default function Register() {
         <div className="auth-logo">🥃</div>
         <h1>Реєстрація в 100 ГРАМ</h1>
         <p className="auth-subtitle">Отримай 500 ГРАМів на старт — на подарунки друзям та преміум</p>
+
+        {!firebaseConfigured && (
+          <div className="auth-error">Firebase ще не налаштований — see firebase.ts</div>
+        )}
 
         <label>
           Ім'я та прізвище
@@ -55,7 +75,7 @@ export default function Register() {
 
         {error && <div className="auth-error">{error}</div>}
 
-        <button className="btn-primary" type="submit" disabled={submitting}>
+        <button className="btn-primary" type="submit" disabled={submitting || !firebaseConfigured}>
           {submitting ? "Реєстрація…" : "Зареєструватися"}
         </button>
 
