@@ -7,12 +7,12 @@ import { getFirestore } from "firebase/firestore";
 // enforced by Firestore Security Rules (see firestore.rules), not by
 // hiding these values.
 const firebaseConfig = {
-  apiKey: "REPLACE_ME",
-  authDomain: "REPLACE_ME.firebaseapp.com",
-  projectId: "REPLACE_ME",
-  storageBucket: "REPLACE_ME.appspot.com",
-  messagingSenderId: "REPLACE_ME",
-  appId: "REPLACE_ME",
+  apiKey: "AIzaSyAgSonWzuz1ZwejQlhLEdw4VSES1yc59NI",
+  authDomain: "gram-8739e.firebaseapp.com",
+  projectId: "gram-8739e",
+  storageBucket: "gram-8739e.firebasestorage.app",
+  messagingSenderId: "886856871186",
+  appId: "1:886856871186:web:a8fd8e1764ff2e288e17cb",
 };
 
 export const firebaseConfigured = firebaseConfig.apiKey !== "REPLACE_ME";
