@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  bio          String   @default("Привіт! Я користуюсь 100 ГРАМ 🥃")
+  avatarColor  String   @default("#6ab2f2")
+  isPremium    Boolean  @default(false)
+  premiumUntil DateTime?
+  grams        Int      @default(500)
+  lastSeenAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  memberships    ChatMember[]
+  messages       Message[]
+  sentTx         Transaction[] @relation("SentTransactions")
+  receivedTx     Transaction[] @relation("ReceivedTransactions")
+}
+
+model Chat {
+  id        String   @id @default(cuid())
+  isGroup   Boolean  @default(false)
+  name      String?
+  createdAt DateTime @default(now())
+
+  members  ChatMember[]
+  messages Message[]
+}
+
+model ChatMember {
+  id       String   @id @default(cuid())
+  chatId   String
+  userId   String
+  role     String   @default("member") // member | admin | owner
+  joinedAt DateTime @default(now())
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, userId])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  chatId    String
+  senderId  String
+  content   String
+  type      String   @default("text") // text | system
+  createdAt DateTime @default(now())
+  editedAt  DateTime?
+
+  chat   Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender User @relation(fields: [senderId], references: [id], onDelete: Cascade)
+}
+
+model Transaction {
+  id         String   @id @default(cuid())
+  fromUserId String?
+  toUserId   String
+  amount     Int
+  type       String   // welcome_bonus | transfer | premium_purchase
+  note       String?
+  createdAt  DateTime @default(now())
+
+  fromUser User? @relation("SentTransactions", fields: [fromUserId], references: [id])
+  toUser   User  @relation("ReceivedTransactions", fields: [toUserId], references: [id])
+}
