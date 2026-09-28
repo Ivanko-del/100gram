@@ -1,3 +1,8 @@
+export interface UserBadge {
+  text: string;
+  color: string;
+}
+
 export interface User {
   id: string;
   username: string;
@@ -9,6 +14,9 @@ export interface User {
   isPremium: boolean;
   premiumUntil?: string | null;
   grams: number;
+  mutedGlobally?: boolean;
+  badge?: UserBadge | null;
+  showAdminBadge?: boolean;
 }
 
 export interface PublicUser {
@@ -31,6 +39,7 @@ export interface ChatSummary {
   avatarUrl?: string | null;
   members: PublicUser[];
   adminUids: string[];
+  mutedUids: string[];
   lastMessage: { content: string; createdAt: string; senderId: string } | null;
   updatedAt: string;
 }
@@ -46,7 +55,7 @@ export interface ChatMessage {
   id: string;
   chatId: string;
   content: string;
-  type: string;
+  type: "text" | "image";
   createdAt: string;
   editedAt?: string | null;
   sender: MessageSender;

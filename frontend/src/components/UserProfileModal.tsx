@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getUserProfile, startDirectChat } from "../data/firestore-api";
+import { getUserProfile, setGlobalMute, setUserBadge, startDirectChat } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
+import { BADGE_COLORS, isSiteAdmin } from "../constants";
 import { User } from "../types";
 import Avatar from "./Avatar";
 
@@ -17,12 +18,20 @@ export default function UserProfileModal({ uid, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
 
+  const [badgeText, setBadgeText] = useState("");
+  const [badgeColor, setBadgeColor] = useState(BADGE_COLORS[0]);
+  const [savingBadge, setSavingBadge] = useState(false);
+  const [mutingGlobal, setMutingGlobal] = useState(false);
+  const [adminError, setAdminError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     getUserProfile(uid).then((p) => {
       if (!cancelled) {
         setProfile(p);
+        setBadgeText(p?.badge?.text ?? "");
+        setBadgeColor(p?.badge?.color ?? BADGE_COLORS[0]);
         setLoading(false);
       }
     });
@@ -43,7 +52,37 @@ export default function UserProfileModal({ uid, onClose }: Props) {
     }
   }
 
+  async function saveBadge(e: FormEvent) {
+    e.preventDefault();
+    if (!profile) return;
+    setAdminError(null);
+    setSavingBadge(true);
+    try {
+      await setUserBadge(profile.id, badgeText.trim() ? { text: badgeText.trim(), color: badgeColor } : null);
+    } catch {
+      setAdminError("Не вдалося зберегти бейдж");
+    } finally {
+      setSavingBadge(false);
+    }
+  }
+
+  async function toggleGlobalMute() {
+    if (!profile) return;
+    setAdminError(null);
+    setMutingGlobal(true);
+    try {
+      await setGlobalMute(profile.id, !profile.mutedGlobally);
+      setProfile({ ...profile, mutedGlobally: !profile.mutedGlobally });
+    } catch {
+      setAdminError("Не вдалося змінити заглушення");
+    } finally {
+      setMutingGlobal(false);
+    }
+  }
+
   const isSelf = me?.id === uid;
+  const viewerIsSiteAdmin = isSiteAdmin(me?.username);
+  const profileIsSiteAdmin = !!profile && isSiteAdmin(profile.username);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -64,11 +103,20 @@ export default function UserProfileModal({ uid, onClose }: Props) {
               <Avatar name={profile.displayName} color={profile.avatarColor} photoUrl={profile.avatarUrl} size={72} isPremium={profile.isPremium} />
               <div className="settings-profile-name">{profile.displayName}</div>
               <div className="settings-profile-username">@{profile.username}</div>
-              {profile.isPremium && (
-                <div className="premium-chip">
-                  ⭐ Преміум{profile.premiumUntil ? ` до ${new Date(profile.premiumUntil).toLocaleDateString("uk-UA")}` : ""}
-                </div>
-              )}
+              <div className="profile-badges">
+                {profile.isPremium && (
+                  <div className="premium-chip">
+                    ⭐ Преміум{profile.premiumUntil ? ` до ${new Date(profile.premiumUntil).toLocaleDateString("uk-UA")}` : ""}
+                  </div>
+                )}
+                {profileIsSiteAdmin && profile.showAdminBadge && <div className="user-badge admin-site-badge">👑 Адміністратор</div>}
+                {profile.badge && (
+                  <div className="user-badge" style={{ background: profile.badge.color }}>
+                    {profile.badge.text}
+                  </div>
+                )}
+                {profile.mutedGlobally && <div className="user-badge muted-badge">🔇 Заглушено</div>}
+              </div>
             </div>
 
             {profile.bio && <p className="profile-card-bio">{profile.bio}</p>}
@@ -77,6 +125,37 @@ export default function UserProfileModal({ uid, onClose }: Props) {
               <button className="btn-primary" onClick={message} disabled={starting}>
                 {starting ? "Відкриття…" : "✉️ Написати повідомлення"}
               </button>
+            )}
+
+            {viewerIsSiteAdmin && !isSelf && (
+              <div className="admin-controls">
+                <h3>Керування (адмін)</h3>
+                <button type="button" className="btn-ghost" disabled={mutingGlobal} onClick={toggleGlobalMute}>
+                  {profile.mutedGlobally ? "🔊 Зняти глобальне заглушення" : "🔇 Заглушити глобально"}
+                </button>
+
+                <form className="badge-form" onSubmit={saveBadge}>
+                  <label>
+                    Бейдж (текст, порожньо - прибрати)
+                    <input value={badgeText} onChange={(e) => setBadgeText(e.target.value)} maxLength={24} placeholder="Модератор" />
+                  </label>
+                  <div className="color-swatches">
+                    {BADGE_COLORS.map((c) => (
+                      <button
+                        type="button"
+                        key={c}
+                        className={`swatch ${badgeColor === c ? "selected" : ""}`}
+                        style={{ backgroundColor: c }}
+                        onClick={() => setBadgeColor(c)}
+                      />
+                    ))}
+                  </div>
+                  <button className="btn-primary" type="submit" disabled={savingBadge}>
+                    {savingBadge ? "Збереження…" : "Зберегти бейдж"}
+                  </button>
+                </form>
+                {adminError && <div className="auth-error">{adminError}</div>}
+              </div>
             )}
           </>
         )}

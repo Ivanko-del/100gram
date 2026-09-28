@@ -1,11 +1,11 @@
 import { DataError } from "../data/firestore-api";
 
-const MAX_DATA_URL_BYTES = 250_000;
-
 /** Downscales an image client-side and returns it as a small JPEG data URL,
- * small enough to store directly on the Firestore user doc - no Storage
- * bucket (and therefore no Blaze plan) needed. */
-export function compressImageToDataUrl(file: File, maxDim = 160, quality = 0.7): Promise<string> {
+ * small enough to store directly on Firestore - no Storage bucket (and
+ * therefore no Blaze plan) needed. Each message is its own small document,
+ * so a bigger budget than the avatar case is fine (default 700 KB, well
+ * under Firestore's 1 MB per-document limit). */
+export function compressImageToDataUrl(file: File, maxDim = 160, quality = 0.7, maxBytes = 700_000): Promise<string> {
   if (!file.type.startsWith("image/")) return Promise.reject(new DataError("Обери файл зображення"));
 
   return new Promise((resolve, reject) => {
@@ -29,7 +29,7 @@ export function compressImageToDataUrl(file: File, maxDim = 160, quality = 0.7):
       ctx.drawImage(img, 0, 0, w, h);
 
       const dataUrl = canvas.toDataURL("image/jpeg", quality);
-      if (dataUrl.length > MAX_DATA_URL_BYTES) {
+      if (dataUrl.length > maxBytes) {
         reject(new DataError("Фото завелике навіть після стиснення - спробуй інше"));
         return;
       }

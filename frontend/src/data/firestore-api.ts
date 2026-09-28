@@ -35,7 +35,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { AVATAR_COLORS, WELCOME_BONUS } from "../constants";
-import { ChatMessage, ChatSummary, PremiumPlan, PublicUser, User, WalletTransaction } from "../types";
+import { ChatMessage, ChatSummary, PremiumPlan, PublicUser, User, UserBadge, WalletTransaction } from "../types";
 
 export class DataError extends Error {}
 
@@ -163,6 +163,9 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     isPremium: !!d.isPremium,
     premiumUntil: d.premiumUntil ? tsToIso(d.premiumUntil) : null,
     grams: (d.grams as number) ?? 0,
+    mutedGlobally: !!d.mutedGlobally,
+    badge: (d.badge as UserBadge) ?? null,
+    showAdminBadge: !!d.showAdminBadge,
   };
 }
 
@@ -174,9 +177,21 @@ export function subscribeUser(uid: string, cb: (user: User | null) => void) {
 
 export async function updateProfile(
   uid: string,
-  patch: { displayName?: string; bio?: string; avatarColor?: string; avatarUrl?: string | null }
+  patch: { displayName?: string; bio?: string; avatarColor?: string; avatarUrl?: string | null; showAdminBadge?: boolean }
 ) {
   await updateDoc(doc(db, "users", uid), patch);
+}
+
+/** Site-admin only: grants or clears a custom badge on someone else's
+ * profile. Firestore rules restrict this write to the hardcoded
+ * SITE_ADMIN_USERNAME and to only this one field. */
+export async function setUserBadge(uid: string, badge: UserBadge | null): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { badge });
+}
+
+/** Site-admin only: mutes/unmutes a user across every chat. */
+export async function setGlobalMute(uid: string, muted: boolean): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { mutedGlobally: muted });
 }
 
 /** Fetches another user's profile to display (bio, premium status, ...).
@@ -265,6 +280,7 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
       isPremium: false,
     })),
     adminUids: (d.adminUids as string[]) ?? [],
+    mutedUids: (d.mutedUids as string[]) ?? [],
     lastMessage,
     updatedAt: d.updatedAt ? tsToIso(d.updatedAt) : tsToIso(d.createdAt),
   };
@@ -412,6 +428,13 @@ export async function renameChat(chatId: string, name: string): Promise<void> {
   await updateDoc(doc(db, "chats", chatId), { name: trimmed });
 }
 
+/** Admin-only: mutes/unmutes a member within just this one chat. */
+export async function setChatMute(chatId: string, uid: string, muted: boolean): Promise<void> {
+  await updateDoc(doc(db, "chats", chatId), {
+    mutedUids: muted ? arrayUnion(uid) : arrayRemove(uid),
+  });
+}
+
 /* ---------------- messages ---------------- */
 
 function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, chatId: string): ChatMessage {
@@ -420,7 +443,7 @@ function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, c
     id: snap.id,
     chatId,
     content: d.content as string,
-    type: "text",
+    type: d.type === "image" ? "image" : "text",
     createdAt: tsToIso(d.createdAt),
     sender: {
       id: d.senderUid as string,
@@ -438,7 +461,7 @@ export function subscribeMessages(chatId: string, cb: (messages: ChatMessage[]) 
   });
 }
 
-export async function sendMessage(chatId: string, sender: User, content: string) {
+export async function sendMessage(chatId: string, sender: User, content: string, type: "text" | "image" = "text") {
   const chatRef = doc(db, "chats", chatId);
   const msgRef = doc(collection(chatRef, "messages"));
   const createdAt = serverTimestamp();
@@ -449,13 +472,20 @@ export async function sendMessage(chatId: string, sender: User, content: string)
     senderDisplayName: sender.displayName,
     senderAvatarColor: sender.avatarColor,
     content,
+    type,
     createdAt,
   });
   batch.update(chatRef, {
     updatedAt: createdAt,
-    lastMessage: { content, senderUid: sender.id, createdAt },
+    lastMessage: { content: type === "image" ? "📷 Фото" : content, senderUid: sender.id, createdAt },
   });
   await batch.commit();
+}
+
+/** Deletes a message. Firestore rules allow this for the message's own
+ * sender, or the site admin deleting anywhere as moderation. */
+export async function deleteMessage(chatId: string, messageId: string): Promise<void> {
+  await deleteDoc(doc(db, "chats", chatId, "messages", messageId));
 }
 
 /* ---------------- typing indicator ---------------- */

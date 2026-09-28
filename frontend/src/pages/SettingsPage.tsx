@@ -8,6 +8,7 @@ import {
   getCurrentEmail,
   grantPremiumFromAxioma,
   searchUsers,
+  startDirectChat,
   subscribeTransactions,
   transferGrams,
   updateProfile,
@@ -18,7 +19,7 @@ import { useAxioma } from "../hooks/useAxioma";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import { compressImageToDataUrl } from "../utils/image";
 import { isSoundEnabled, playNotificationSound, setSoundEnabled } from "../utils/sound";
-import { AVATAR_COLORS, PREMIUM_PLANS } from "../constants";
+import { AVATAR_COLORS, PREMIUM_PLANS, SITE_ADMIN_USERNAME, isSiteAdmin } from "../constants";
 import { PremiumPlan, PublicUser, User, WalletTransaction } from "../types";
 import Avatar from "../components/Avatar";
 import AxiomaCard from "../components/AxiomaCard";
@@ -124,7 +125,7 @@ function ProfileTab({ user }: TabProps) {
     setPhotoError(null);
     setUploadingPhoto(true);
     try {
-      const dataUrl = await compressImageToDataUrl(file);
+      const dataUrl = await compressImageToDataUrl(file, 160, 0.7, 250_000);
       await updateProfile(user.id, { avatarUrl: dataUrl });
       setAvatarUrl(dataUrl);
     } catch (err) {
@@ -561,7 +562,9 @@ function PremiumTab({ user }: TabProps) {
 
 function AccountTab({ user }: TabProps) {
   const { logout } = useAuth();
+  const navigate = useNavigate();
   const email = getCurrentEmail();
+  const isMeSiteAdmin = isSiteAdmin(user.username);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -573,6 +576,36 @@ function AccountTab({ user }: TabProps) {
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const [startingSupport, setStartingSupport] = useState(false);
+  const [supportError, setSupportError] = useState<string | null>(null);
+
+  const [showAdminBadge, setShowAdminBadge] = useState(!!user.showAdminBadge);
+  const [savingAdminBadge, setSavingAdminBadge] = useState(false);
+
+  async function openSupport() {
+    setSupportError(null);
+    setStartingSupport(true);
+    try {
+      const chatId = await startDirectChat(user, SITE_ADMIN_USERNAME);
+      navigate(`/chat/${chatId}`);
+    } catch (err) {
+      setSupportError(err instanceof DataError ? err.message : "Не вдалося відкрити підтримку");
+    } finally {
+      setStartingSupport(false);
+    }
+  }
+
+  async function toggleAdminBadge() {
+    const next = !showAdminBadge;
+    setShowAdminBadge(next);
+    setSavingAdminBadge(true);
+    try {
+      await updateProfile(user.id, { showAdminBadge: next });
+    } finally {
+      setSavingAdminBadge(false);
+    }
+  }
 
   async function onChangePassword(e: FormEvent) {
     e.preventDefault();
@@ -619,6 +652,25 @@ function AccountTab({ user }: TabProps) {
         Email
         <input value={email ?? ""} disabled />
       </label>
+
+      {!isMeSiteAdmin && (
+        <div>
+          <button className="btn-ghost" type="button" onClick={openSupport} disabled={startingSupport}>
+            {startingSupport ? "Відкриття…" : "🆘 Підтримка"}
+          </button>
+          {supportError && <div className="auth-error">{supportError}</div>}
+        </div>
+      )}
+
+      {isMeSiteAdmin && (
+        <div className="admin-controls">
+          <h3>Адмін-панель</h3>
+          <label className="switch-row">
+            <span>👑 Показувати бейдж адміністратора</span>
+            <input type="checkbox" checked={showAdminBadge} onChange={toggleAdminBadge} disabled={savingAdminBadge} />
+          </label>
+        </div>
+      )}
 
       <form onSubmit={onChangePassword}>
         <h3 style={{ marginTop: 4 }}>Змінити пароль</h3>

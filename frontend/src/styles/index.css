@@ -667,6 +667,55 @@ textarea {
   white-space: pre-wrap;
 }
 
+.profile-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.user-badge {
+  display: inline-block;
+  background: var(--bg-elevated);
+  color: white;
+  padding: 5px 11px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-site-badge {
+  background: linear-gradient(90deg, #ffd76e, #ff9a56);
+  color: #2a1a00;
+}
+
+.muted-badge {
+  background: var(--danger);
+}
+
+.admin-controls {
+  border: 1px solid rgba(255, 190, 90, 0.4);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-controls h3 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+.badge-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .member-list {
   display: flex;
   flex-direction: column;
@@ -683,6 +732,10 @@ textarea {
   padding: 2px 8px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+.muted-inline-badge {
+  color: var(--danger);
 }
 
 .member-row {
@@ -757,11 +810,40 @@ textarea {
   word-break: break-word;
 }
 
+.message-image {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: 10px;
+  object-fit: contain;
+}
+
 .message-time {
   font-size: 11px;
   color: var(--text-secondary);
   text-align: right;
   margin-top: 2px;
+}
+
+.message-delete-btn {
+  position: absolute;
+  top: -10px;
+  right: -8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 11px;
+  padding: 2px 7px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  opacity: 0.75;
+}
+
+.message-delete-btn.confirming {
+  background: var(--danger);
+  color: white;
+  border-color: var(--danger);
+  opacity: 1;
 }
 
 .message-input-bar {
@@ -771,6 +853,43 @@ textarea {
   padding: 14px 20px;
   border-top: 1px solid var(--border);
   background: var(--bg-sidebar);
+}
+
+.message-media-btn {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.message-media-error {
+  margin: 0 20px 8px;
+}
+
+.gif-url-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 0 20px 10px;
+  background: var(--bg-sidebar);
+}
+
+.gif-url-bar input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 14px;
+  outline: none;
 }
 
 .message-input {

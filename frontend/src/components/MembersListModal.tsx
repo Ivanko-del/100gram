@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { DataError, addChatMembers, removeChatMember, renameChat, searchUsers, setChatAdmin } from "../data/firestore-api";
+import { DataError, addChatMembers, removeChatMember, renameChat, searchUsers, setChatAdmin, setChatMute } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
 import { ChatSummary, PublicUser } from "../types";
 import Avatar from "./Avatar";
@@ -86,6 +86,18 @@ export default function MembersListModal({ chat, onClose, onSelectMember }: Prop
       await setChatAdmin(chat.id, uid, makeAdmin);
     } catch {
       setError("Не вдалося змінити права");
+    } finally {
+      setBusyUid(null);
+    }
+  }
+
+  async function toggleMute(uid: string, muted: boolean) {
+    setError(null);
+    setBusyUid(uid);
+    try {
+      await setChatMute(chat.id, uid, muted);
+    } catch {
+      setError("Не вдалося змінити заглушення");
     } finally {
       setBusyUid(null);
     }
@@ -186,6 +198,7 @@ export default function MembersListModal({ chat, onClose, onSelectMember }: Prop
         <div className="member-list">
           {chat.members.map((m) => {
             const memberIsAdmin = chat.adminUids.includes(m.id);
+            const memberIsMuted = chat.mutedUids.includes(m.id);
             const isSelf = m.id === user?.id;
             return (
               <div key={m.id} className="member-row">
@@ -195,6 +208,7 @@ export default function MembersListModal({ chat, onClose, onSelectMember }: Prop
                     <div className="chat-list-item-top">
                       <span className="chat-name">{m.displayName}</span>
                       {memberIsAdmin && <span className="admin-badge">адмін</span>}
+                      {memberIsMuted && <span className="admin-badge muted-inline-badge">заглушено</span>}
                     </div>
                     <div className="chat-list-item-bottom">@{m.username}</div>
                   </div>
@@ -208,6 +222,14 @@ export default function MembersListModal({ chat, onClose, onSelectMember }: Prop
                       onClick={() => toggleAdmin(m.id, !memberIsAdmin)}
                     >
                       {memberIsAdmin ? "Зняти адміна" : "Зробити адміном"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      disabled={busyUid === m.id}
+                      onClick={() => toggleMute(m.id, !memberIsMuted)}
+                    >
+                      {memberIsMuted ? "Зняти заглушення" : "Заглушити в чаті"}
                     </button>
                     <button
                       type="button"

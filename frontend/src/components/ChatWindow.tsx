@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { sendMessage as sendMessageApi, setTyping, subscribeMessages, subscribeTyping } from "../data/firestore-api";
+import { deleteMessage, sendMessage as sendMessageApi, setTyping, subscribeMessages, subscribeTyping } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
+import { isSiteAdmin } from "../constants";
 import { ChatMessage, ChatSummary } from "../types";
 import Avatar from "./Avatar";
 import MessageBubble from "./MessageBubble";
@@ -52,7 +53,12 @@ export default function ChatWindow({ chat }: Props) {
 
   function sendMessage(content: string) {
     if (!user) return;
-    sendMessageApi(chat.id, user, content).catch(() => {});
+    sendMessageApi(chat.id, user, content, "text").catch(() => {});
+  }
+
+  function sendImage(url: string) {
+    if (!user) return;
+    sendMessageApi(chat.id, user, url, "image").catch(() => {});
   }
 
   function handleTyping(isTyping: boolean) {
@@ -60,10 +66,16 @@ export default function ChatWindow({ chat }: Props) {
     setTyping(chat.id, user.id, user.displayName, isTyping).catch(() => {});
   }
 
+  function handleDelete(messageId: string) {
+    deleteMessage(chat.id, messageId).catch(() => {});
+  }
+
   const isGroup = chat.isGroup;
   const isChannel = chat.isChannel;
   const isAdmin = !!user && chat.adminUids.includes(user.id);
-  const canPost = !isChannel || isAdmin;
+  const isAppAdmin = isSiteAdmin(user?.username);
+  const muted = !!user && (!!user.mutedGlobally || chat.mutedUids.includes(user.id));
+  const canPost = (!isChannel || isAdmin) && !muted;
   const typingLabel = typingUsers.length > 0 ? `${typingUsers.join(", ")} друкує…` : null;
   const subtitle =
     typingLabel ??
@@ -118,13 +130,25 @@ export default function ChatWindow({ chat }: Props) {
         {messages.map((m, idx) => {
           const prev = messages[idx - 1];
           const showSender = isGroup && !isChannel && (!prev || prev.sender.id !== m.sender.id);
-          return <MessageBubble key={m.id} message={m} isOwn={m.sender.id === user?.id} showSender={showSender} />;
+          const isOwn = m.sender.id === user?.id;
+          return (
+            <MessageBubble
+              key={m.id}
+              message={m}
+              isOwn={isOwn}
+              showSender={showSender}
+              canDelete={isOwn || isAppAdmin}
+              onDelete={handleDelete}
+            />
+          );
         })}
         <div ref={bottomRef} />
       </div>
 
       {canPost ? (
-        <MessageInput onSend={sendMessage} onTyping={handleTyping} disabled={!user} />
+        <MessageInput onSend={sendMessage} onSendImage={sendImage} onTyping={handleTyping} disabled={!user} />
+      ) : muted ? (
+        <div className="channel-readonly-note">🔇 Тебе заглушено {chat.mutedUids.includes(user?.id ?? "") ? "в цьому чаті" : ""}</div>
       ) : (
         <div className="channel-readonly-note">Публікувати в цьому каналі можуть лише адміни</div>
       )}

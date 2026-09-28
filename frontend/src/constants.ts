@@ -9,3 +9,14 @@ export const PREMIUM_PLANS: PremiumPlan[] = [
 ];
 
 export const AVATAR_COLORS = ["#6ab2f2", "#e17076", "#8774e1", "#54cb68", "#f0a72a", "#faa774", "#c650a1"];
+
+export const BADGE_COLORS = ["#f0a72a", "#e17076", "#8774e1", "#54cb68", "#6ab2f2", "#c650a1", "#ff9a56"];
+
+/** The one hardcoded site administrator - matched against firestore.rules'
+ * own hardcoded check on usernameLower, so this can never be self-granted
+ * client-side (see isSiteAdmin() in firestore.rules). */
+export const SITE_ADMIN_USERNAME = "theivankoo";
+
+export function isSiteAdmin(username: string | undefined | null): boolean {
+  return (username ?? "").toLowerCase() === SITE_ADMIN_USERNAME;
+}

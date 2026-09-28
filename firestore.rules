@@ -9,6 +9,13 @@ service cloud.firestore {
     function isOwner(uid) {
       return isSignedIn() && request.auth.uid == uid;
     }
+    // The one hardcoded site admin. Checked against the requester's OWN
+    // (immutable) usernameLower, never a self-settable flag, so nobody can
+    // grant themselves this by writing a field from devtools.
+    function isSiteAdmin() {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.usernameLower == "theivankoo";
+    }
 
     // username -> uid reservation, used to enforce unique usernames and
     // to look up a chat/transfer target by @username.
@@ -36,7 +43,10 @@ service cloud.firestore {
         // else's `grams` - but only that field, and only upward.
         || (isSignedIn()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["grams"])
-          && request.resource.data.grams > resource.data.grams);
+          && request.resource.data.grams > resource.data.grams)
+        // Site admin: grant/clear a custom badge, or mute someone site-wide -
+        // nothing else on someone else's account.
+        || (isSiteAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["badge", "mutedGlobally"]));
       allow delete: if isOwner(uid);
 
       match /transactions/{txId} {
@@ -92,13 +102,25 @@ service cloud.firestore {
         );
       allow delete: if false;
 
+      function isChatMuted() {
+        return 'mutedUids' in chatData() && request.auth.uid in chatData().mutedUids;
+      }
+      function isGloballyMuted() {
+        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.mutedGlobally == true;
+      }
+
       match /messages/{messageId} {
         allow read: if isSignedIn() && request.auth.uid in chatData().memberUids;
         allow create: if isSignedIn()
           && request.auth.uid in chatData().memberUids
           && request.resource.data.senderUid == request.auth.uid
-          && canPostIn();
-        allow update, delete: if false;
+          && canPostIn()
+          && !isChatMuted()
+          && !isGloballyMuted();
+        allow update: if false;
+        // Anyone may delete their own message; the site admin may delete
+        // any message anywhere, for moderation.
+        allow delete: if isSignedIn() && (resource.data.senderUid == request.auth.uid || isSiteAdmin());
       }
 
       match /typing/{uid} {
