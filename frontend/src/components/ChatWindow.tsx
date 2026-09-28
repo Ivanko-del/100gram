@@ -6,6 +6,8 @@ import { ChatMessage, ChatSummary } from "../types";
 import Avatar from "./Avatar";
 import MessageBubble from "./MessageBubble";
 import MessageInput from "./MessageInput";
+import MembersListModal from "./MembersListModal";
+import UserProfileModal from "./UserProfileModal";
 
 interface Props {
   chat: ChatSummary;
@@ -17,6 +19,8 @@ export default function ChatWindow({ chat }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [showMembers, setShowMembers] = useState(false);
+  const [profileUid, setProfileUid] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -64,6 +68,15 @@ export default function ChatWindow({ chat }: Props) {
   const subtitle =
     typingLabel ??
     (isChannel ? `${chat.members.length} підписників` : isGroup ? `${chat.members.length} учасників` : "в мережі");
+  const otherMember = !isGroup ? chat.members.find((m) => m.id !== user?.id) : undefined;
+
+  function openHeaderInfo() {
+    if (isGroup) {
+      setShowMembers(true);
+    } else if (otherMember) {
+      setProfileUid(otherMember.id);
+    }
+  }
 
   return (
     <section className="chat-window">
@@ -71,15 +84,29 @@ export default function ChatWindow({ chat }: Props) {
         <button className="mobile-back-btn" onClick={() => navigate("/")} aria-label="Назад до чатів">
           ←
         </button>
-        <Avatar name={chat.name} color={chat.avatarColor} />
-        <div>
-          <div className="chat-window-title">
-            {isChannel ? "📢 " : isGroup ? "👥 " : ""}
-            {chat.name}
+        <button type="button" className="chat-header-info" onClick={openHeaderInfo}>
+          <Avatar name={chat.name} color={chat.avatarColor} />
+          <div>
+            <div className="chat-window-title">
+              {isChannel ? "📢 " : isGroup ? "👥 " : ""}
+              {chat.name}
+            </div>
+            <div className="chat-window-subtitle">{subtitle}</div>
           </div>
-          <div className="chat-window-subtitle">{subtitle}</div>
-        </div>
+        </button>
       </header>
+
+      {showMembers && (
+        <MembersListModal
+          chat={chat}
+          onClose={() => setShowMembers(false)}
+          onSelectMember={(uid) => {
+            setShowMembers(false);
+            setProfileUid(uid);
+          }}
+        />
+      )}
+      {profileUid && <UserProfileModal uid={profileUid} onClose={() => setProfileUid(null)} />}
 
       <div className="message-list">
         {loading && <div className="empty-hint">Завантаження повідомлень…</div>}

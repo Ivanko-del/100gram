@@ -1,8 +1,12 @@
 import {
+  EmailAuthProvider,
   createUserWithEmailAndPassword,
+  deleteUser,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   signInWithEmailAndPassword,
   signOut,
+  updatePassword,
   type User as FirebaseAuthUser,
 } from "firebase/auth";
 import {
@@ -43,6 +47,12 @@ function randomColor(): string {
 
 export function watchAuth(cb: (fbUser: FirebaseAuthUser | null) => void) {
   return onAuthStateChanged(auth, cb);
+}
+
+/** Firebase Auth keeps the email locally for the signed-in user - it is
+ * never stored in the Firestore user doc, so read it from here. */
+export function getCurrentEmail(): string | null {
+  return auth.currentUser?.email ?? null;
 }
 
 export async function registerUser(
@@ -100,6 +110,36 @@ export async function logoutUser(): Promise<void> {
   await signOut(auth);
 }
 
+async function reauthenticate(currentPassword: string): Promise<void> {
+  const fbUser = auth.currentUser;
+  if (!fbUser || !fbUser.email) throw new DataError("Ви не увійшли в акаунт");
+  try {
+    await reauthenticateWithCredential(fbUser, EmailAuthProvider.credential(fbUser.email, currentPassword));
+  } catch {
+    throw new DataError("Невірний поточний пароль");
+  }
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await reauthenticate(currentPassword);
+  try {
+    await updatePassword(auth.currentUser!, newPassword);
+  } catch {
+    throw new DataError("Не вдалося змінити пароль");
+  }
+}
+
+/** Deletes the account's own profile data and Firebase Auth user. Chats
+ * and messages the account took part in are left in place - removing
+ * them everywhere they're referenced is out of scope here - but the
+ * username is freed up and the account itself is gone. */
+export async function deleteAccount(currentPassword: string, uid: string, usernameLower: string): Promise<void> {
+  await reauthenticate(currentPassword);
+  await deleteDoc(doc(db, "usernames", usernameLower)).catch(() => {});
+  await deleteDoc(doc(db, "users", uid)).catch(() => {});
+  await deleteUser(auth.currentUser!);
+}
+
 /* ---------------- users ---------------- */
 
 function mapUser(snap: { id: string; data: () => Record<string, unknown> }): User {
@@ -124,6 +164,14 @@ export function subscribeUser(uid: string, cb: (user: User | null) => void) {
 
 export async function updateProfile(uid: string, patch: { displayName?: string; bio?: string; avatarColor?: string }) {
   await updateDoc(doc(db, "users", uid), patch);
+}
+
+/** Fetches another user's profile to display (bio, premium status, ...).
+ * The result also carries `grams`/`email` because they come off the same
+ * document, but the UI must not show those for anyone but yourself. */
+export async function getUserProfile(uid: string): Promise<User | null> {
+  const snap = await getDoc(doc(db, "users", uid));
+  return snap.exists() ? mapUser(snap) : null;
 }
 
 export async function searchUsers(queryText: string, excludeUid: string): Promise<PublicUser[]> {

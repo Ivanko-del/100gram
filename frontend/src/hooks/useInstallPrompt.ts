@@ -16,6 +16,10 @@ function isIos(): boolean {
   return /iphone|ipad|ipod/i.test(navigator.userAgent);
 }
 
+function isAndroid(): boolean {
+  return /android/i.test(navigator.userAgent);
+}
+
 export function useInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(isStandalone());
@@ -49,5 +53,6 @@ export function useInstallPrompt() {
     canPromptInstall: !!deferredPrompt,
     promptInstall,
     isIos: isIos() && !isStandalone(),
+    isAndroid: isAndroid(),
   };
 }

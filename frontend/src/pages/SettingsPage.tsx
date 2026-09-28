@@ -1,13 +1,23 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { DataError, buyPremium, subscribeTransactions, transferGrams, updateProfile } from "../data/firestore-api";
+import {
+  DataError,
+  buyPremium,
+  changePassword,
+  deleteAccount,
+  getCurrentEmail,
+  subscribeTransactions,
+  transferGrams,
+  updateProfile,
+} from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
+import { isSoundEnabled, playNotificationSound, setSoundEnabled } from "../utils/sound";
 import { AVATAR_COLORS, PREMIUM_PLANS } from "../constants";
 import { PremiumPlan, User, WalletTransaction } from "../types";
 import Avatar from "../components/Avatar";
 
-type Tab = "profile" | "wallet" | "premium" | "appearance";
+type Tab = "profile" | "wallet" | "premium" | "appearance" | "account";
 
 interface TabProps {
   user: User;
@@ -51,6 +61,9 @@ export default function SettingsPage() {
           <button className={tab === "premium" ? "active" : ""} onClick={() => openTab("premium")}>
             ⭐ Преміум
           </button>
+          <button className={tab === "account" ? "active" : ""} onClick={() => openTab("account")}>
+            🔒 Акаунт
+          </button>
         </nav>
         <button className="logout-btn" onClick={() => logout()}>
           Вийти
@@ -65,6 +78,7 @@ export default function SettingsPage() {
         {tab === "appearance" && <AppearanceTab />}
         {tab === "wallet" && <WalletTab user={user} />}
         {tab === "premium" && <PremiumTab user={user} />}
+        {tab === "account" && <AccountTab user={user} />}
       </main>
     </div>
   );
@@ -127,12 +141,20 @@ function ProfileTab({ user }: TabProps) {
 
 function AppearanceTab() {
   const [theme, setTheme] = useState<string>(() => localStorage.getItem("stogram_theme") ?? "dark");
-  const { installed, canPromptInstall, promptInstall, isIos } = useInstallPrompt();
+  const [soundOn, setSoundOn] = useState(isSoundEnabled);
+  const { installed, canPromptInstall, promptInstall, isIos, isAndroid } = useInstallPrompt();
 
   function applyTheme(next: string) {
     setTheme(next);
     localStorage.setItem("stogram_theme", next);
     document.documentElement.dataset.theme = next;
+  }
+
+  function toggleSound() {
+    const next = !soundOn;
+    setSoundOn(next);
+    setSoundEnabled(next);
+    if (next) playNotificationSound();
   }
 
   return (
@@ -148,27 +170,49 @@ function AppearanceTab() {
         </button>
       </div>
 
+      <h3>Сповіщення</h3>
+      <label className="switch-row">
+        <span>🔔 Звук при новому повідомленні</span>
+        <input type="checkbox" checked={soundOn} onChange={toggleSound} />
+      </label>
+
       <h3>Застосунок на телефон і ПК</h3>
       {installed ? (
         <p className="settings-hint">✓ Уже встановлено як застосунок на цьому пристрої</p>
-      ) : canPromptInstall ? (
-        <>
-          <p className="settings-hint">
-            Постав 100 ГРАМ як застосунок — окрема іконка, вікно без адресного рядка, працює офлайн.
-          </p>
-          <button className="btn-primary" style={{ width: "fit-content" }} onClick={promptInstall}>
-            📲 Встановити застосунок
-          </button>
-        </>
-      ) : isIos ? (
-        <p className="settings-hint">
-          На iPhone/iPad: натисни кнопку "Поділитися" внизу Safari → «На екран «Домій»».
-        </p>
       ) : (
-        <p className="settings-hint">
-          Відкрий цю сторінку в Chrome/Edge — з'явиться іконка встановлення в адресному рядку,
-          або цей пристрій уже не пропонує встановлення.
-        </p>
+        <>
+          {canPromptInstall && (
+            <>
+              <p className="settings-hint">
+                Постав 100 ГРАМ як застосунок — окрема іконка, вікно без адресного рядка, працює офлайн.
+              </p>
+              <button className="btn-primary" style={{ width: "fit-content" }} onClick={promptInstall}>
+                📲 Встановити застосунок
+              </button>
+            </>
+          )}
+          {/* Chrome/Edge only fire the auto-prompt after some engagement
+              (repeat visits, time on page), so a manual path that always
+              works matters more than the button above. */}
+          <ol className="install-steps">
+            {isIos ? (
+              <>
+                <li>Натисни «Поділитися» ⬆️ внизу екрана Safari</li>
+                <li>Обери «На екран «Додому»»</li>
+              </>
+            ) : isAndroid ? (
+              <>
+                <li>Натисни ⋮ (три крапки) у верхньому правому куті браузера</li>
+                <li>Обери «Додати на головний екран» або «Встановити застосунок»</li>
+              </>
+            ) : (
+              <>
+                <li>У Chrome/Edge знайди значок встановлення ⊕ праворуч в адресному рядку</li>
+                <li>Або відкрий меню ⋮ → «Встановити 100 ГРАМ…»</li>
+              </>
+            )}
+          </ol>
+        </>
       )}
     </div>
   );
@@ -312,6 +356,132 @@ function PremiumTab({ user }: TabProps) {
             </button>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function AccountTab({ user }: TabProps) {
+  const { logout } = useAuth();
+  const email = getCurrentEmail();
+
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwSaved, setPwSaved] = useState(false);
+
+  const [showDelete, setShowDelete] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function onChangePassword(e: FormEvent) {
+    e.preventDefault();
+    setPwError(null);
+    setPwSaved(false);
+    if (newPassword.length < 6) {
+      setPwError("Новий пароль — мінімум 6 символів");
+      return;
+    }
+    setPwSaving(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      setCurrentPassword("");
+      setNewPassword("");
+      setPwSaved(true);
+      setTimeout(() => setPwSaved(false), 2500);
+    } catch (err) {
+      setPwError(err instanceof DataError ? err.message : "Не вдалося змінити пароль");
+    } finally {
+      setPwSaving(false);
+    }
+  }
+
+  async function onDeleteAccount(e: FormEvent) {
+    e.preventDefault();
+    setDeleteError(null);
+    setDeleting(true);
+    try {
+      await deleteAccount(deletePassword, user.id, user.username.toLowerCase());
+      // Firebase Auth signs the user out as part of deleting them; this
+      // just clears any local state on our side too.
+      await logout().catch(() => {});
+    } catch (err) {
+      setDeleteError(err instanceof DataError ? err.message : "Не вдалося видалити акаунт");
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="settings-panel">
+      <h2>Акаунт</h2>
+
+      <label>
+        Email
+        <input value={email ?? ""} disabled />
+      </label>
+
+      <form onSubmit={onChangePassword}>
+        <h3 style={{ marginTop: 4 }}>Змінити пароль</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <label>
+            Поточний пароль
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              autoComplete="current-password"
+            />
+          </label>
+          <label>
+            Новий пароль
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Мінімум 6 символів"
+              autoComplete="new-password"
+            />
+          </label>
+          {pwError && <div className="auth-error">{pwError}</div>}
+          <button className="btn-primary" type="submit" disabled={pwSaving || !currentPassword || !newPassword}>
+            {pwSaving ? "Збереження…" : pwSaved ? "Пароль змінено ✓" : "Змінити пароль"}
+          </button>
+        </div>
+      </form>
+
+      <div className="danger-zone">
+        <h3 style={{ marginTop: 0 }}>Небезпечна зона</h3>
+        {!showDelete ? (
+          <button className="btn-danger" type="button" onClick={() => setShowDelete(true)}>
+            Видалити акаунт
+          </button>
+        ) : (
+          <form onSubmit={onDeleteAccount} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <p className="settings-hint">
+              Акаунт і профіль зникнуть назавжди. Введи пароль, щоб підтвердити.
+            </p>
+            <label>
+              Пароль
+              <input
+                type="password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </label>
+            {deleteError && <div className="auth-error">{deleteError}</div>}
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="btn-danger" type="submit" disabled={deleting || !deletePassword}>
+                {deleting ? "Видалення…" : "Так, видалити назавжди"}
+              </button>
+              <button className="btn-ghost" type="button" onClick={() => setShowDelete(false)} disabled={deleting}>
+                Скасувати
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
