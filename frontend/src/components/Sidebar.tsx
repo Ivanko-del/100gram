@@ -4,6 +4,7 @@ import { DataError, searchUsers, startDirectChat } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
 import { ChatSummary, PublicUser } from "../types";
 import Avatar from "./Avatar";
+import NewChatModal from "./NewChatModal";
 
 interface SidebarProps {
   chats: ChatSummary[];
@@ -27,6 +28,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
   const [results, setResults] = useState<PublicUser[]>([]);
   const [searching, setSearching] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
 
   useEffect(() => {
     const q = query.trim();
@@ -79,7 +81,21 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
         <div className="grams-pill" onClick={() => navigate("/settings")} title="Гаманець">
           🥃 {user?.grams ?? 0}
         </div>
+        <button className="icon-btn new-chat-btn" onClick={() => setShowNewChatModal(true)} title="Нова група або канал" aria-label="Нова група або канал">
+          ＋
+        </button>
       </div>
+
+      {showNewChatModal && (
+        <NewChatModal
+          onClose={() => setShowNewChatModal(false)}
+          onCreated={(chatId) => {
+            setShowNewChatModal(false);
+            onChatCreated(chatId);
+            navigate(`/chat/${chatId}`);
+          }}
+        />
+      )}
 
       {errorMsg && <div className="sidebar-error">{errorMsg}</div>}
 
@@ -114,7 +130,10 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
             <Avatar name={chat.name} color={chat.avatarColor} />
             <div className="chat-list-item-body">
               <div className="chat-list-item-top">
-                <span className="chat-name">{chat.name}</span>
+                <span className="chat-name">
+                  {chat.isChannel ? "📢 " : chat.isGroup ? "👥 " : ""}
+                  {chat.name}
+                </span>
                 {chat.lastMessage && <span className="chat-time">{formatTime(chat.lastMessage.createdAt)}</span>}
               </div>
               <div className="chat-list-item-bottom">{chat.lastMessage?.content ?? "Немає повідомлень"}</div>

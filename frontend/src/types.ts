@@ -23,9 +23,11 @@ export interface PublicUser {
 export interface ChatSummary {
   id: string;
   isGroup: boolean;
+  isChannel: boolean;
   name: string;
   avatarColor: string;
   members: PublicUser[];
+  adminUids: string[];
   lastMessage: { content: string; createdAt: string; senderId: string } | null;
   updatedAt: string;
 }

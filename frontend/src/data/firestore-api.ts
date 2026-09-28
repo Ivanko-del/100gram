@@ -158,9 +158,14 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
   const memberUids = (d.memberUids as string[]) ?? [];
   const profiles = (d.memberProfiles as Record<string, MemberProfile>) ?? {};
   const isGroup = !!d.isGroup;
+  const isChannel = !!d.isChannel;
   const otherUid = memberUids.find((u) => u !== myUid);
-  const name = isGroup ? ((d.name as string) ?? "Група") : (otherUid ? profiles[otherUid]?.displayName ?? "Чат" : "Чат");
-  const avatarColor = isGroup ? "#8774e1" : otherUid ? profiles[otherUid]?.avatarColor ?? "#999" : "#999";
+  const name = isGroup
+    ? (d.name as string) ?? (isChannel ? "Канал" : "Група")
+    : otherUid
+      ? profiles[otherUid]?.displayName ?? "Чат"
+      : "Чат";
+  const avatarColor = isGroup ? (isChannel ? "#3d8fdb" : "#8774e1") : otherUid ? profiles[otherUid]?.avatarColor ?? "#999" : "#999";
   const lastMessage = d.lastMessage
     ? {
         content: (d.lastMessage as any).content,
@@ -171,6 +176,7 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
   return {
     id: snap.id,
     isGroup,
+    isChannel,
     name,
     avatarColor,
     members: memberUids.map((u) => ({
@@ -181,6 +187,7 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
       bio: "",
       isPremium: false,
     })),
+    adminUids: (d.adminUids as string[]) ?? [],
     lastMessage,
     updatedAt: d.updatedAt ? tsToIso(d.updatedAt) : tsToIso(d.createdAt),
   };
@@ -211,17 +218,67 @@ export async function startDirectChat(me: User, otherUsername: string): Promise<
     const other = mapUser(otherSnap);
     await setDoc(chatRef, {
       isGroup: false,
+      isChannel: false,
       name: null,
       memberUids: [me.id, otherUid].sort(),
       memberProfiles: {
         [me.id]: { username: me.username, displayName: me.displayName, avatarColor: me.avatarColor },
         [otherUid]: { username: other.username, displayName: other.displayName, avatarColor: other.avatarColor },
       },
+      adminUids: [],
       lastMessage: null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
   }
+  return chatId;
+}
+
+/**
+ * Creates a group (everyone can post) or a channel (only admins can post).
+ * `memberUsernames` are the initial members besides the creator, who is
+ * always added as a member and as the first admin.
+ */
+export async function createGroupChat(
+  creator: User,
+  name: string,
+  memberUsernames: string[],
+  isChannel: boolean
+): Promise<string> {
+  const trimmedName = name.trim();
+  if (!trimmedName) throw new DataError("Вкажи назву");
+
+  const uniqueUsernames = Array.from(new Set(memberUsernames.map((u) => u.trim()).filter(Boolean)));
+  const memberProfiles: Record<string, MemberProfile> = {
+    [creator.id]: { username: creator.username, displayName: creator.displayName, avatarColor: creator.avatarColor },
+  };
+  const memberUids = [creator.id];
+
+  for (const username of uniqueUsernames) {
+    const unameSnap = await getDoc(doc(db, "usernames", username.toLowerCase()));
+    if (!unameSnap.exists()) throw new DataError(`Користувача @${username} не знайдено`);
+    const uid = (unameSnap.data() as { uid: string }).uid;
+    if (uid === creator.id || memberUids.includes(uid)) continue;
+    const userSnap = await getDoc(doc(db, "users", uid));
+    if (!userSnap.exists()) continue;
+    const u = mapUser(userSnap);
+    memberUids.push(uid);
+    memberProfiles[uid] = { username: u.username, displayName: u.displayName, avatarColor: u.avatarColor };
+  }
+
+  const chatId = (isChannel ? "ch_" : "grp_") + crypto.randomUUID();
+  const chatRef = doc(db, "chats", chatId);
+  await setDoc(chatRef, {
+    isGroup: true,
+    isChannel,
+    name: trimmedName,
+    memberUids,
+    memberProfiles,
+    adminUids: [creator.id],
+    lastMessage: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
   return chatId;
 }
 

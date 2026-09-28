@@ -43,26 +43,46 @@ service cloud.firestore {
     }
 
     match /chats/{chatId} {
+      function chatData() {
+        return get(/databases/$(database)/documents/chats/$(chatId)).data;
+      }
+      function isChatAdmin() {
+        return request.auth.uid in chatData().adminUids;
+      }
+      // A channel is a chat with isChannel: true - only its admins may
+      // post; a plain group or direct chat lets every member post.
+      function canPostIn() {
+        return chatData().isChannel != true || isChatAdmin();
+      }
+
       // `resource == null` covers the "does this chat already exist"
       // probe a client makes before creating a new direct chat: the doc
       // isn't there yet, so there is no membership to check.
       allow read: if isSignedIn() && (resource == null || request.auth.uid in resource.data.memberUids);
-      allow create: if isSignedIn() && request.auth.uid in request.resource.data.memberUids;
-      allow update: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isSignedIn() && request.auth.uid in request.resource.data.memberUids
+        // whoever creates a channel must be listed as one of its admins
+        && (request.resource.data.isChannel != true || request.auth.uid in request.resource.data.adminUids);
+      allow update: if isSignedIn() && request.auth.uid in resource.data.memberUids
+        && (
+          // any member may bump the "last message" preview when sending
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["updatedAt", "lastMessage"])
+          // structural changes (name, members, admins, ...) need admin rights
+          // on a channel; any member may still edit a plain group/direct chat
+          || (resource.data.isChannel == true ? request.auth.uid in resource.data.adminUids : true)
+        );
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if isSignedIn()
-          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.memberUids;
+        allow read: if isSignedIn() && request.auth.uid in chatData().memberUids;
         allow create: if isSignedIn()
-          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.memberUids
-          && request.resource.data.senderUid == request.auth.uid;
+          && request.auth.uid in chatData().memberUids
+          && request.resource.data.senderUid == request.auth.uid
+          && canPostIn();
         allow update, delete: if false;
       }
 
       match /typing/{uid} {
-        allow read: if isSignedIn()
-          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.memberUids;
+        allow read: if isSignedIn() && request.auth.uid in chatData().memberUids;
         allow write: if isOwner(uid);
       }
     }

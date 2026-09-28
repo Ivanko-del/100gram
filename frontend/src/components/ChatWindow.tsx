@@ -57,7 +57,13 @@ export default function ChatWindow({ chat }: Props) {
   }
 
   const isGroup = chat.isGroup;
+  const isChannel = chat.isChannel;
+  const isAdmin = !!user && chat.adminUids.includes(user.id);
+  const canPost = !isChannel || isAdmin;
   const typingLabel = typingUsers.length > 0 ? `${typingUsers.join(", ")} друкує…` : null;
+  const subtitle =
+    typingLabel ??
+    (isChannel ? `${chat.members.length} підписників` : isGroup ? `${chat.members.length} учасників` : "в мережі");
 
   return (
     <section className="chat-window">
@@ -67,25 +73,34 @@ export default function ChatWindow({ chat }: Props) {
         </button>
         <Avatar name={chat.name} color={chat.avatarColor} />
         <div>
-          <div className="chat-window-title">{chat.name}</div>
-          <div className="chat-window-subtitle">
-            {typingLabel ?? (isGroup ? `${chat.members.length} учасників` : "в мережі")}
+          <div className="chat-window-title">
+            {isChannel ? "📢 " : isGroup ? "👥 " : ""}
+            {chat.name}
           </div>
+          <div className="chat-window-subtitle">{subtitle}</div>
         </div>
       </header>
 
       <div className="message-list">
         {loading && <div className="empty-hint">Завантаження повідомлень…</div>}
-        {!loading && messages.length === 0 && <div className="empty-hint">Напишіть перше повідомлення 👋</div>}
+        {!loading && messages.length === 0 && (
+          <div className="empty-hint">
+            {isChannel ? (canPost ? "Опублікуй перший допис 📢" : "Тут поки що немає дописів") : "Напишіть перше повідомлення 👋"}
+          </div>
+        )}
         {messages.map((m, idx) => {
           const prev = messages[idx - 1];
-          const showSender = isGroup && (!prev || prev.sender.id !== m.sender.id);
+          const showSender = isGroup && !isChannel && (!prev || prev.sender.id !== m.sender.id);
           return <MessageBubble key={m.id} message={m} isOwn={m.sender.id === user?.id} showSender={showSender} />;
         })}
         <div ref={bottomRef} />
       </div>
 
-      <MessageInput onSend={sendMessage} onTyping={handleTyping} disabled={!user} />
+      {canPost ? (
+        <MessageInput onSend={sendMessage} onTyping={handleTyping} disabled={!user} />
+      ) : (
+        <div className="channel-readonly-note">Публікувати в цьому каналі можуть лише адміни</div>
+      )}
     </section>
   );
 }
