@@ -36,6 +36,11 @@ import { ChatMessage, ChatSummary, PremiumPlan, PublicUser, User, WalletTransact
 
 export class DataError extends Error {}
 
+/** Accepts "@olha" or "olha" alike - usernames are stored without the "@". */
+function normalizeUsername(raw: string): string {
+  return raw.trim().toLowerCase().replace(/^@/, "");
+}
+
 function tsToIso(ts: unknown): string {
   if (ts instanceof Timestamp) return ts.toDate().toISOString();
   return new Date().toISOString();
@@ -176,7 +181,7 @@ export async function getUserProfile(uid: string): Promise<User | null> {
 }
 
 export async function searchUsers(queryText: string, excludeUid: string): Promise<PublicUser[]> {
-  const qLower = queryText.trim().toLowerCase();
+  const qLower = normalizeUsername(queryText);
   if (qLower.length < 2) return [];
   const qy = query(
     collection(db, "users"),
@@ -252,7 +257,7 @@ export function subscribeChats(myUid: string, cb: (chats: ChatSummary[]) => void
 }
 
 export async function startDirectChat(me: User, otherUsername: string): Promise<string> {
-  const usernameLower = otherUsername.trim().toLowerCase();
+  const usernameLower = normalizeUsername(otherUsername);
   const unameSnap = await getDoc(doc(db, "usernames", usernameLower));
   if (!unameSnap.exists()) throw new DataError("Користувача не знайдено");
   const otherUid = (unameSnap.data() as { uid: string }).uid;
@@ -297,14 +302,14 @@ export async function createGroupChat(
   const trimmedName = name.trim();
   if (!trimmedName) throw new DataError("Вкажи назву");
 
-  const uniqueUsernames = Array.from(new Set(memberUsernames.map((u) => u.trim()).filter(Boolean)));
+  const uniqueUsernames = Array.from(new Set(memberUsernames.map((u) => u.trim().replace(/^@/, "")).filter(Boolean)));
   const memberProfiles: Record<string, MemberProfile> = {
     [creator.id]: { username: creator.username, displayName: creator.displayName, avatarColor: creator.avatarColor },
   };
   const memberUids = [creator.id];
 
   for (const username of uniqueUsernames) {
-    const unameSnap = await getDoc(doc(db, "usernames", username.toLowerCase()));
+    const unameSnap = await getDoc(doc(db, "usernames", normalizeUsername(username)));
     if (!unameSnap.exists()) throw new DataError(`Користувача @${username} не знайдено`);
     const uid = (unameSnap.data() as { uid: string }).uid;
     if (uid === creator.id || memberUids.includes(uid)) continue;
@@ -424,7 +429,7 @@ export function subscribeTransactions(uid: string, cb: (txs: WalletTransaction[]
 }
 
 export async function transferGrams(fromUid: string, fromUsername: string, toUsername: string, amount: number, note: string | null) {
-  const toUsernameLower = toUsername.trim().toLowerCase();
+  const toUsernameLower = normalizeUsername(toUsername);
   const unameSnap = await getDoc(doc(db, "usernames", toUsernameLower));
   if (!unameSnap.exists()) throw new DataError("Отримувача не знайдено");
   const toUid = (unameSnap.data() as { uid: string }).uid;

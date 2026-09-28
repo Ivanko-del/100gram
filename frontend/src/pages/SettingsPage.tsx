@@ -7,6 +7,7 @@ import {
   deleteAccount,
   getCurrentEmail,
   grantPremiumFromAxioma,
+  searchUsers,
   subscribeTransactions,
   transferGrams,
   updateProfile,
@@ -17,7 +18,7 @@ import { useAxioma } from "../hooks/useAxioma";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import { isSoundEnabled, playNotificationSound, setSoundEnabled } from "../utils/sound";
 import { AVATAR_COLORS, PREMIUM_PLANS } from "../constants";
-import { PremiumPlan, User, WalletTransaction } from "../types";
+import { PremiumPlan, PublicUser, User, WalletTransaction } from "../types";
 import Avatar from "../components/Avatar";
 import AxiomaCard from "../components/AxiomaCard";
 
@@ -222,12 +223,18 @@ function AppearanceTab() {
   );
 }
 
+const TRANSFER_PRESETS = [10, 50, 100, 250];
+
 function WalletTab({ user }: TabProps) {
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [toUsername, setToUsername] = useState("");
+  const [recipient, setRecipient] = useState<PublicUser | null>(null);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<PublicUser[]>([]);
+  const [searching, setSearching] = useState(false);
   const [amount, setAmount] = useState(50);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
@@ -235,15 +242,39 @@ function WalletTab({ user }: TabProps) {
     return unsub;
   }, [user.id]);
 
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setResults([]);
+      return;
+    }
+    setSearching(true);
+    const handle = setTimeout(async () => {
+      try {
+        setResults(await searchUsers(q, user.id));
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [query, user.id]);
+
   async function onTransfer(e: FormEvent) {
     e.preventDefault();
+    if (!recipient) return;
     setSending(true);
     setError(null);
+    setSuccess(null);
     try {
-      await transferGrams(user.id, user.username, toUsername.trim(), amount, note.trim() || null);
-      setToUsername("");
+      await transferGrams(user.id, user.username, recipient.username, amount, note.trim() || null);
+      setSuccess(`Переказано ${amount} ГРАМ користувачу @${recipient.username} ✓`);
+      setRecipient(null);
+      setQuery("");
       setNote("");
       setAmount(50);
+      setTimeout(() => setSuccess(null), 3000);
     } catch (e2) {
       setError(e2 instanceof DataError ? e2.message : "Не вдалося переказати");
     } finally {
@@ -261,12 +292,71 @@ function WalletTab({ user }: TabProps) {
 
       <form className="transfer-form" onSubmit={onTransfer}>
         <h3>Переказати другу</h3>
-        <label>
-          Username отримувача
-          <input value={toUsername} onChange={(e) => setToUsername(e.target.value)} placeholder="olha" />
-        </label>
+
+        {recipient ? (
+          <div className="transfer-recipient-chip">
+            <Avatar name={recipient.displayName} color={recipient.avatarColor} size={32} isPremium={recipient.isPremium} />
+            <div>
+              <div className="chat-name">{recipient.displayName}</div>
+              <div className="chat-list-item-bottom">@{recipient.username}</div>
+            </div>
+            <button type="button" className="btn-ghost" onClick={() => setRecipient(null)}>
+              Змінити
+            </button>
+          </div>
+        ) : (
+          <label>
+            Кому переказати
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Ім'я або @username"
+              autoComplete="off"
+            />
+          </label>
+        )}
+
+        {!recipient && query.trim().length >= 2 && (
+          <div className="search-results transfer-search-results">
+            {searching && <div className="search-results-title">Пошук…</div>}
+            {!searching && results.length === 0 && <div className="empty-hint">Нікого не знайдено</div>}
+            {results.map((u) => (
+              <button
+                type="button"
+                className="chat-list-item"
+                key={u.id}
+                onClick={() => {
+                  setRecipient(u);
+                  setQuery("");
+                  setResults([]);
+                }}
+              >
+                <Avatar name={u.displayName} color={u.avatarColor} isPremium={u.isPremium} />
+                <div className="chat-list-item-body">
+                  <div className="chat-list-item-top">
+                    <span className="chat-name">{u.displayName}</span>
+                  </div>
+                  <div className="chat-list-item-bottom">@{u.username}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
         <label>
           Сума
+          <div className="topup-presets">
+            {TRANSFER_PRESETS.map((v) => (
+              <button
+                type="button"
+                key={v}
+                className={`plan-card topup-preset ${amount === v ? "selected" : ""}`}
+                onClick={() => setAmount(v)}
+              >
+                {v} 🥃
+              </button>
+            ))}
+          </div>
           <input
             type="number"
             min={1}
@@ -280,7 +370,8 @@ function WalletTab({ user }: TabProps) {
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="За каву ☕" maxLength={120} />
         </label>
         {error && <div className="auth-error">{error}</div>}
-        <button className="btn-primary" type="submit" disabled={sending || !toUsername.trim()}>
+        {success && <div className="auth-success">{success}</div>}
+        <button className="btn-primary" type="submit" disabled={sending || !recipient}>
           {sending ? "Надсилання…" : "Переказати"}
         </button>
       </form>

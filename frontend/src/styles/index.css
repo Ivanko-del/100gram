@@ -971,6 +971,28 @@ textarea {
   gap: 10px;
 }
 
+.transfer-recipient-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+
+.transfer-recipient-chip > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.transfer-search-results {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 /* ---------- Аксіома Банк ---------- */
 .axioma-card {
   background: var(--bg-panel);

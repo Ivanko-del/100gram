@@ -27,9 +27,16 @@ service cloud.firestore {
       // rewriting its own `grams`/`isPremium` directly - real money-grade
       // integrity would need Cloud Functions to own those fields server-side.
       // Fine for a play-currency demo; do not store anything sensitive here.
-      allow update: if isOwner(uid)
-        && request.resource.data.username == resource.data.username
-        && request.resource.data.usernameLower == resource.data.usernameLower;
+      allow update: if (isOwner(uid)
+          && request.resource.data.username == resource.data.username
+          && request.resource.data.usernameLower == resource.data.usernameLower)
+        // A transfer credits the RECIPIENT's balance from the sender's own
+        // client call (Firestore runs both sides of the transaction under
+        // the sender's auth), so a non-owner must be able to raise someone
+        // else's `grams` - but only that field, and only upward.
+        || (isSignedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["grams"])
+          && request.resource.data.grams > resource.data.grams);
       allow delete: if isOwner(uid);
 
       match /transactions/{txId} {
