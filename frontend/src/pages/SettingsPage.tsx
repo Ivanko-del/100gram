@@ -6,16 +6,20 @@ import {
   changePassword,
   deleteAccount,
   getCurrentEmail,
+  grantPremiumFromAxioma,
   subscribeTransactions,
   transferGrams,
   updateProfile,
 } from "../data/firestore-api";
+import { AXIOMA_EXCHANGE_RATE, AxiomaError, withdrawFromAxioma } from "../axioma";
 import { useAuth } from "../context/AuthContext";
+import { useAxioma } from "../hooks/useAxioma";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import { isSoundEnabled, playNotificationSound, setSoundEnabled } from "../utils/sound";
 import { AVATAR_COLORS, PREMIUM_PLANS } from "../constants";
 import { PremiumPlan, User, WalletTransaction } from "../types";
 import Avatar from "../components/Avatar";
+import AxiomaCard from "../components/AxiomaCard";
 
 type Tab = "profile" | "wallet" | "premium" | "appearance" | "account";
 
@@ -281,19 +285,29 @@ function WalletTab({ user }: TabProps) {
         </button>
       </form>
 
+      <AxiomaCard user={user} />
+
       <h3>Історія</h3>
       <div className="tx-list">
         {transactions.length === 0 && <div className="empty-hint">Ще немає транзакцій</div>}
         {transactions.map((t) => (
           <div key={t.id} className="tx-row">
             <div className="tx-icon">
-              {t.type === "premium_purchase" ? "⭐" : t.type === "welcome_bonus" ? "🎁" : t.direction === "in" ? "⬇️" : "⬆️"}
+              {t.type === "premium_purchase" || t.type === "premium_purchase_axioma"
+                ? "⭐"
+                : t.type === "welcome_bonus"
+                  ? "🎁"
+                  : t.type === "axioma_topup"
+                    ? "💳"
+                    : t.direction === "in"
+                      ? "⬇️"
+                      : "⬆️"}
             </div>
             <div className="tx-body">
               <div className="tx-title">
                 {t.type === "welcome_bonus"
                   ? "Вітальний бонус"
-                  : t.type === "premium_purchase"
+                  : t.type === "premium_purchase" || t.type === "premium_purchase_axioma" || t.type === "axioma_topup"
                     ? t.note ?? "Покупка преміум"
                     : t.direction === "in"
                       ? `Від @${t.counterparty.username}`
@@ -301,10 +315,12 @@ function WalletTab({ user }: TabProps) {
               </div>
               <div className="tx-date">{new Date(t.createdAt).toLocaleString("uk-UA")}</div>
             </div>
-            <div className={`tx-amount ${t.amount >= 0 ? "positive" : "negative"}`}>
-              {t.amount >= 0 ? "+" : ""}
-              {t.amount}
-            </div>
+            {t.amount !== 0 && (
+              <div className={`tx-amount ${t.amount >= 0 ? "positive" : "negative"}`}>
+                {t.amount >= 0 ? "+" : ""}
+                {t.amount}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -313,6 +329,7 @@ function WalletTab({ user }: TabProps) {
 }
 
 function PremiumTab({ user }: TabProps) {
+  const { linked: axiomaLinked } = useAxioma();
   const [buying, setBuying] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -326,6 +343,21 @@ function PremiumTab({ user }: TabProps) {
       setSuccess(`Преміум активовано: ${plan.label} ✓`);
     } catch (e2) {
       setError(e2 instanceof DataError ? e2.message : "Не вдалося оформити преміум");
+    } finally {
+      setBuying(null);
+    }
+  }
+
+  async function buyWithAxioma(plan: PremiumPlan) {
+    setBuying(plan.id + ":axioma");
+    setError(null);
+    setSuccess(null);
+    try {
+      await withdrawFromAxioma(plan.price / AXIOMA_EXCHANGE_RATE, `Преміум 100 ГРАМ: ${plan.label}`);
+      await grantPremiumFromAxioma(user.id, plan);
+      setSuccess(`Преміум активовано карткою Аксіоми: ${plan.label} ✓`);
+    } catch (e2) {
+      setError(e2 instanceof AxiomaError || e2 instanceof DataError ? e2.message : "Не вдалося оплатити карткою Аксіоми");
     } finally {
       setBuying(null);
     }
@@ -351,12 +383,22 @@ function PremiumTab({ user }: TabProps) {
           <div className="plan-card" key={plan.id}>
             <div className="plan-label">{plan.label}</div>
             <div className="plan-price">{plan.price} 🥃</div>
-            <button className="btn-primary" disabled={buying === plan.id} onClick={() => buy(plan)}>
-              {buying === plan.id ? "Оформлення…" : "Оформити"}
+            <button className="btn-primary" disabled={!!buying} onClick={() => buy(plan)}>
+              {buying === plan.id ? "Оформлення…" : "Оформити за ГРАМи"}
             </button>
+            {axiomaLinked && (
+              <button className="btn-ghost" disabled={!!buying} onClick={() => buyWithAxioma(plan)}>
+                {buying === plan.id + ":axioma" ? "Оплата…" : `💳 ${plan.price / AXIOMA_EXCHANGE_RATE} ₴ Аксіомою`}
+              </button>
+            )}
           </div>
         ))}
       </div>
+      {!axiomaLinked && (
+        <p className="settings-hint">
+          Прив'яжи картку Аксіоми в Гаманці, щоб платити преміум напряму нею.
+        </p>
+      )}
     </div>
   );
 }

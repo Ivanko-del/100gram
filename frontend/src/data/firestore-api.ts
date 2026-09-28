@@ -17,6 +17,7 @@ import {
   endAt,
   getDoc,
   getDocs,
+  increment,
   limit,
   onSnapshot,
   orderBy,
@@ -464,5 +465,51 @@ export async function buyPremium(uid: string, plan: PremiumPlan) {
     tx.update(ref, { grams: data.grams - plan.price, isPremium: true, premiumUntil: Timestamp.fromDate(premiumUntil) });
     const txRef = doc(collection(ref, "transactions"));
     tx.set(txRef, { amount: -plan.price, type: "premium_purchase", note: `Преміум: ${plan.label}`, counterpart: null, counterpartUsername: null, createdAt: serverTimestamp() });
+  });
+}
+
+/* ---------------- Аксіома Банк ---------------- */
+
+/** Credits ГРАМ after a successful `withdrawFromAxioma` - call this only
+ * once the Аксіома card debit has actually gone through. */
+export async function topUpGramsFromAxioma(uid: string, grams: number, axiomaAmount: number): Promise<void> {
+  const ref = doc(db, "users", uid);
+  const txRef = doc(collection(ref, "transactions"));
+  const batch = writeBatch(db);
+  batch.update(ref, { grams: increment(grams) });
+  batch.set(txRef, {
+    amount: grams,
+    type: "axioma_topup",
+    note: `Поповнення з картки Аксіоми (${axiomaAmount} ₴)`,
+    counterpart: null,
+    counterpartUsername: null,
+    createdAt: serverTimestamp(),
+  });
+  await batch.commit();
+}
+
+/** Grants premium paid for directly with the Аксіома card - no ГРАМ change,
+ * call only once the Аксіома card debit has actually gone through. */
+export async function grantPremiumFromAxioma(uid: string, plan: PremiumPlan): Promise<void> {
+  await runTransaction(db, async (tx) => {
+    const ref = doc(db, "users", uid);
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new DataError("Помилка гаманця");
+    const data = snap.data() as { premiumUntil: Timestamp | null };
+
+    const now = new Date();
+    const base = data.premiumUntil && data.premiumUntil.toDate() > now ? data.premiumUntil.toDate() : now;
+    const premiumUntil = new Date(base.getTime() + plan.days * 24 * 60 * 60 * 1000);
+
+    tx.update(ref, { isPremium: true, premiumUntil: Timestamp.fromDate(premiumUntil) });
+    const txRef = doc(collection(ref, "transactions"));
+    tx.set(txRef, {
+      amount: 0,
+      type: "premium_purchase_axioma",
+      note: `Преміум карткою Аксіоми: ${plan.label}`,
+      counterpart: null,
+      counterpartUsername: null,
+      createdAt: serverTimestamp(),
+    });
   });
 }

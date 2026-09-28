@@ -17,6 +17,14 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Firebase 8.x compat build + vendored SDK for the Аксіома Банк
+         wallet top-up / premium-by-card integration (see src/axioma.ts).
+         Loaded as classic `defer` scripts so they run, in order, before
+         the module script below - AxiomaSDK is a plain window global. -->
+    <script defer src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script defer src="/axioma-sdk.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

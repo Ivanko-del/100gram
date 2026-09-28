@@ -971,6 +971,72 @@ textarea {
   gap: 10px;
 }
 
+/* ---------- Аксіома Банк ---------- */
+.axioma-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.axioma-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.axioma-card input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+}
+
+.axioma-card input:focus {
+  border-color: var(--accent);
+}
+
+.axioma-balance-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.axioma-unlink {
+  margin-left: auto;
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+
+.topup-presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.topup-preset {
+  flex: 1;
+  min-width: 64px;
+  padding: 10px 6px;
+  gap: 0;
+  font-weight: 700;
+  font-size: 13.5px;
+}
+
+.topup-preset.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .tx-list {
   display: flex;
   flex-direction: column;
