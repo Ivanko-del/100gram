@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { DataError, addChatMembers, removeChatMember, searchUsers, setChatAdmin } from "../data/firestore-api";
+import { DataError, addChatMembers, removeChatMember, renameChat, searchUsers, setChatAdmin } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
 import { ChatSummary, PublicUser } from "../types";
 import Avatar from "./Avatar";
@@ -21,6 +21,11 @@ export default function MembersListModal({ chat, onClose, onSelectMember }: Prop
   const [inviting, setInviting] = useState(false);
   const [busyUid, setBusyUid] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(chat.name);
+  const [savingName, setSavingName] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query.trim();
@@ -86,6 +91,20 @@ export default function MembersListModal({ chat, onClose, onSelectMember }: Prop
     }
   }
 
+  async function saveName(e: FormEvent) {
+    e.preventDefault();
+    setNameError(null);
+    setSavingName(true);
+    try {
+      await renameChat(chat.id, nameDraft);
+      setEditingName(false);
+    } catch (err) {
+      setNameError(err instanceof DataError ? err.message : "Не вдалося перейменувати");
+    } finally {
+      setSavingName(false);
+    }
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -95,6 +114,40 @@ export default function MembersListModal({ chat, onClose, onSelectMember }: Prop
             ✕
           </button>
         </div>
+
+        {isAdmin && (
+          <div className="chat-settings-block">
+            {editingName ? (
+              <form className="chat-rename-form" onSubmit={saveName}>
+                <input
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  maxLength={64}
+                  autoFocus
+                />
+                <button className="btn-primary" type="submit" disabled={savingName || !nameDraft.trim()}>
+                  {savingName ? "…" : "Зберегти"}
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => {
+                    setEditingName(false);
+                    setNameDraft(chat.name);
+                    setNameError(null);
+                  }}
+                >
+                  Скасувати
+                </button>
+              </form>
+            ) : (
+              <button type="button" className="btn-ghost chat-rename-trigger" onClick={() => setEditingName(true)}>
+                ✏️ Перейменувати {chat.isChannel ? "канал" : "групу"}
+              </button>
+            )}
+            {nameError && <div className="auth-error">{nameError}</div>}
+          </div>
+        )}
 
         {canInvite && (
           <form onSubmit={onInviteSubmit}>

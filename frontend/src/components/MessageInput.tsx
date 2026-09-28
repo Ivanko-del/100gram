@@ -1,4 +1,4 @@
-import { FormEvent, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useRef, useState } from "react";
 
 interface Props {
   onSend: (content: string) => void;
@@ -6,9 +6,17 @@ interface Props {
   disabled?: boolean;
 }
 
+const MAX_TEXTAREA_HEIGHT = 140;
+
 export default function MessageInput({ onSend, onTyping, disabled }: Props) {
   const [value, setValue] = useState("");
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  function autoGrow(el: HTMLTextAreaElement) {
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT) + "px";
+  }
 
   function handleChange(v: string) {
     setValue(v);
@@ -24,15 +32,31 @@ export default function MessageInput({ onSend, onTyping, disabled }: Props) {
     onSend(trimmed);
     setValue("");
     onTyping(false);
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+  }
+
+  // Enter sends the message; Shift+Enter (or a pasted/typed newline) keeps
+  // the line break, so multi-line posts actually stay multi-line.
+  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submit(e);
+    }
   }
 
   return (
     <form className="message-input-bar" onSubmit={submit}>
-      <input
+      <textarea
+        ref={textareaRef}
         className="message-input"
         value={value}
         placeholder="Написати повідомлення…"
-        onChange={(e) => handleChange(e.target.value)}
+        rows={1}
+        onChange={(e) => {
+          handleChange(e.target.value);
+          autoGrow(e.target);
+        }}
+        onKeyDown={onKeyDown}
         disabled={disabled}
       />
       <button className="send-btn" type="submit" disabled={disabled || !value.trim()}>

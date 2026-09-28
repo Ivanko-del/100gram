@@ -405,6 +405,13 @@ export async function setChatAdmin(chatId: string, uid: string, makeAdmin: boole
   });
 }
 
+/** Admin-only: renames a group/channel. */
+export async function renameChat(chatId: string, name: string): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new DataError("Вкажи назву");
+  await updateDoc(doc(db, "chats", chatId), { name: trimmed });
+}
+
 /* ---------------- messages ---------------- */
 
 function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, chatId: string): ChatMessage {
