@@ -37,8 +37,11 @@ export default function MessageInput({ onSend, onTyping, disabled }: Props) {
 
   // Enter sends the message; Shift+Enter (or a pasted/typed newline) keeps
   // the line break, so multi-line posts actually stay multi-line.
+  // `isComposing` guards mobile IME/autocomplete (Gboard etc.): the Enter
+  // that confirms a predictive-text suggestion must not also submit the
+  // message, or the text gets cut off mid-composition and comes out garbled.
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       submit(e);
     }
