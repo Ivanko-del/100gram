@@ -5,6 +5,7 @@ export interface User {
   displayName: string;
   bio: string;
   avatarColor: string;
+  avatarUrl?: string | null;
   isPremium: boolean;
   premiumUntil?: string | null;
   grams: number;
@@ -16,6 +17,7 @@ export interface PublicUser {
   displayName: string;
   bio: string;
   avatarColor: string;
+  avatarUrl?: string | null;
   isPremium: boolean;
   lastSeenAt?: string;
 }
@@ -26,6 +28,7 @@ export interface ChatSummary {
   isChannel: boolean;
   name: string;
   avatarColor: string;
+  avatarUrl?: string | null;
   members: PublicUser[];
   adminUids: string[];
   lastMessage: { content: string; createdAt: string; senderId: string } | null;

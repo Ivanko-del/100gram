@@ -69,10 +69,6 @@ export default function NewChatModal({ onClose, onCreated }: Props) {
       setError("Вкажи назву");
       return;
     }
-    if (selected.length === 0) {
-      setError(mode === "channel" ? "Додай хоча б одного підписника" : "Додай хоча б одного учасника");
-      return;
-    }
     setCreating(true);
     try {
       const chatId = await createGroupChat(
@@ -110,7 +106,8 @@ export default function NewChatModal({ onClose, onCreated }: Props) {
         <p className="settings-hint">
           {mode === "channel"
             ? "У каналі писати можеш лише ти (і майбутні адміни) — інші тільки читають."
-            : "У групі писати можуть усі учасники."}
+            : "У групі писати можуть усі учасники."}{" "}
+          Учасників не обов'язково додавати зараз — можна запросити пізніше з профілю чату.
         </p>
 
         <label>
@@ -147,7 +144,7 @@ export default function NewChatModal({ onClose, onCreated }: Props) {
             {!searching && results.length === 0 && <div className="empty-hint">Нікого не знайдено</div>}
             {results.map((u) => (
               <button type="button" className="chat-list-item" key={u.id} onClick={() => addMember(u)}>
-                <Avatar name={u.displayName} color={u.avatarColor} isPremium={u.isPremium} size={36} />
+                <Avatar name={u.displayName} color={u.avatarColor} photoUrl={u.avatarUrl} isPremium={u.isPremium} size={36} />
                 <div className="chat-list-item-body">
                   <div className="chat-list-item-top">
                     <span className="chat-name">{u.displayName}</span>
@@ -161,7 +158,7 @@ export default function NewChatModal({ onClose, onCreated }: Props) {
 
         {error && <div className="auth-error">{error}</div>}
 
-        <button className="btn-primary" type="submit" disabled={creating || !name.trim() || selected.length === 0}>
+        <button className="btn-primary" type="submit" disabled={creating || !name.trim()}>
           {creating ? "Створення…" : `Створити ${mode === "channel" ? "канал" : "групу"}`}
         </button>
       </form>

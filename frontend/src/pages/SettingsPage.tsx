@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   DataError,
@@ -13,6 +13,7 @@ import {
   updateProfile,
 } from "../data/firestore-api";
 import { AXIOMA_EXCHANGE_RATE, AxiomaError, withdrawFromAxioma } from "../axioma";
+import { removeAvatarPhoto, uploadAvatarPhoto } from "../storage";
 import { useAuth } from "../context/AuthContext";
 import { useAxioma } from "../hooks/useAxioma";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
@@ -48,7 +49,7 @@ export default function SettingsPage() {
           ← Назад до чатів
         </button>
         <div className="settings-profile-preview">
-          <Avatar name={user.displayName} color={user.avatarColor} size={72} isPremium={user.isPremium} />
+          <Avatar name={user.displayName} color={user.avatarColor} photoUrl={user.avatarUrl} size={72} isPremium={user.isPremium} />
           <div className="settings-profile-name">{user.displayName}</div>
           <div className="settings-profile-username">@{user.username}</div>
           {user.isPremium && <div className="premium-chip">⭐ Преміум активний</div>}
@@ -93,9 +94,12 @@ function ProfileTab({ user }: TabProps) {
   const [displayName, setDisplayName] = useState(user.displayName);
   const [bio, setBio] = useState(user.bio);
   const [avatarColor, setAvatarColor] = useState(user.avatarColor);
+  const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
@@ -113,9 +117,57 @@ function ProfileTab({ user }: TabProps) {
     }
   }
 
+  async function onPickPhoto(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setPhotoError(null);
+    setUploadingPhoto(true);
+    try {
+      const url = await uploadAvatarPhoto(user.id, file);
+      await updateProfile(user.id, { avatarUrl: url });
+      setAvatarUrl(url);
+    } catch (err) {
+      setPhotoError(err instanceof DataError ? err.message : "Не вдалося завантажити фото");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
+  async function onRemovePhoto() {
+    setPhotoError(null);
+    setUploadingPhoto(true);
+    try {
+      await removeAvatarPhoto(user.id);
+      await updateProfile(user.id, { avatarUrl: null });
+      setAvatarUrl(null);
+    } catch {
+      setPhotoError("Не вдалося прибрати фото");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
   return (
     <form className="settings-panel" onSubmit={onSave}>
       <h2>Профіль</h2>
+
+      <div className="avatar-photo-picker">
+        <Avatar name={displayName || "?"} color={avatarColor} photoUrl={avatarUrl} size={88} isPremium={user.isPremium} />
+        <div className="avatar-photo-actions">
+          <label className="btn-ghost avatar-upload-btn">
+            {uploadingPhoto ? "Завантаження…" : avatarUrl ? "Змінити фото" : "Додати фото"}
+            <input type="file" accept="image/*" hidden disabled={uploadingPhoto} onChange={onPickPhoto} />
+          </label>
+          {avatarUrl && (
+            <button type="button" className="btn-ghost" disabled={uploadingPhoto} onClick={onRemovePhoto}>
+              Прибрати фото
+            </button>
+          )}
+        </div>
+      </div>
+      {photoError && <div className="auth-error">{photoError}</div>}
+
       <label>
         Ім'я
         <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={48} />
@@ -124,7 +176,7 @@ function ProfileTab({ user }: TabProps) {
         Про себе
         <textarea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={160} rows={3} />
       </label>
-      <label>Колір аватара</label>
+      <label>Колір аватара {avatarUrl && <span className="settings-hint">(видно, коли немає фото)</span>}</label>
       <div className="color-swatches">
         {AVATAR_COLORS.map((c) => (
           <button
@@ -295,7 +347,7 @@ function WalletTab({ user }: TabProps) {
 
         {recipient ? (
           <div className="transfer-recipient-chip">
-            <Avatar name={recipient.displayName} color={recipient.avatarColor} size={32} isPremium={recipient.isPremium} />
+            <Avatar name={recipient.displayName} color={recipient.avatarColor} photoUrl={recipient.avatarUrl} size={32} isPremium={recipient.isPremium} />
             <div>
               <div className="chat-name">{recipient.displayName}</div>
               <div className="chat-list-item-bottom">@{recipient.username}</div>
@@ -331,7 +383,7 @@ function WalletTab({ user }: TabProps) {
                   setResults([]);
                 }}
               >
-                <Avatar name={u.displayName} color={u.avatarColor} isPremium={u.isPremium} />
+                <Avatar name={u.displayName} color={u.avatarColor} photoUrl={u.avatarUrl} isPremium={u.isPremium} />
                 <div className="chat-list-item-body">
                   <div className="chat-list-item-top">
                     <span className="chat-name">{u.displayName}</span>
@@ -454,9 +506,17 @@ function PremiumTab({ user }: TabProps) {
     }
   }
 
+  const bestValueId = PREMIUM_PLANS[PREMIUM_PLANS.length - 1]?.id;
+  const planIcons: Record<string, string> = { "1m": "🚀", "6m": "💎", "12m": "👑" };
+
   return (
     <div className="settings-panel">
-      <h2>100 ГРАМ Преміум ⭐</h2>
+      <div className="premium-hero">
+        <div className="premium-hero-crown">👑</div>
+        <h2>100 ГРАМ Преміум</h2>
+        <p>Виділяйся, отримуй бонуси і підтримуй розробку застосунку</p>
+      </div>
+
       <ul className="premium-features">
         <li>🚀 Швидша доставка повідомлень</li>
         <li>⭐ Значок преміум біля імені</li>
@@ -464,14 +524,20 @@ function PremiumTab({ user }: TabProps) {
         <li>📎 Більший ліміт повідомлень</li>
         <li>🥃 +10% бонус до подарункових ГРАМів</li>
       </ul>
+
       {user.isPremium && user.premiumUntil && (
-        <div className="premium-chip">Активний до {new Date(user.premiumUntil).toLocaleDateString("uk-UA")}</div>
+        <div className="premium-chip premium-chip-active">
+          👑 Активний до {new Date(user.premiumUntil).toLocaleDateString("uk-UA")}
+        </div>
       )}
       {error && <div className="auth-error">{error}</div>}
       {success && <div className="auth-success">{success}</div>}
+
       <div className="premium-plans">
         {PREMIUM_PLANS.map((plan) => (
-          <div className="plan-card" key={plan.id}>
+          <div className={`plan-card ${plan.id === bestValueId ? "best-value" : ""}`} key={plan.id}>
+            {plan.id === bestValueId && <div className="plan-badge">Найвигідніше</div>}
+            <div className="plan-icon">{planIcons[plan.id] ?? "⭐"}</div>
             <div className="plan-label">{plan.label}</div>
             <div className="plan-price">{plan.price} 🥃</div>
             <button className="btn-primary" disabled={!!buying} onClick={() => buy(plan)}>

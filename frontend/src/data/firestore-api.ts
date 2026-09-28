@@ -11,8 +11,11 @@ import {
 } from "firebase/auth";
 import {
   Timestamp,
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   endAt,
   getDoc,
@@ -156,6 +159,7 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     displayName: d.displayName as string,
     bio: (d.bio as string) ?? "",
     avatarColor: d.avatarColor as string,
+    avatarUrl: (d.avatarUrl as string) ?? null,
     isPremium: !!d.isPremium,
     premiumUntil: d.premiumUntil ? tsToIso(d.premiumUntil) : null,
     grams: (d.grams as number) ?? 0,
@@ -168,7 +172,10 @@ export function subscribeUser(uid: string, cb: (user: User | null) => void) {
   });
 }
 
-export async function updateProfile(uid: string, patch: { displayName?: string; bio?: string; avatarColor?: string }) {
+export async function updateProfile(
+  uid: string,
+  patch: { displayName?: string; bio?: string; avatarColor?: string; avatarUrl?: string | null }
+) {
   await updateDoc(doc(db, "users", uid), patch);
 }
 
@@ -195,7 +202,15 @@ export async function searchUsers(queryText: string, excludeUid: string): Promis
     .filter((d) => d.id !== excludeUid)
     .map((d) => {
       const u = mapUser(d);
-      return { id: u.id, username: u.username, displayName: u.displayName, bio: u.bio, avatarColor: u.avatarColor, isPremium: u.isPremium };
+      return {
+        id: u.id,
+        username: u.username,
+        displayName: u.displayName,
+        bio: u.bio,
+        avatarColor: u.avatarColor,
+        avatarUrl: u.avatarUrl,
+        isPremium: u.isPremium,
+      };
     });
 }
 
@@ -205,6 +220,11 @@ interface MemberProfile {
   username: string;
   displayName: string;
   avatarColor: string;
+  avatarUrl?: string | null;
+}
+
+function toMemberProfile(u: { username: string; displayName: string; avatarColor: string; avatarUrl?: string | null }): MemberProfile {
+  return { username: u.username, displayName: u.displayName, avatarColor: u.avatarColor, avatarUrl: u.avatarUrl ?? null };
 }
 
 function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUid: string): ChatSummary {
@@ -220,6 +240,7 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
       ? profiles[otherUid]?.displayName ?? "Чат"
       : "Чат";
   const avatarColor = isGroup ? (isChannel ? "#3d8fdb" : "#8774e1") : otherUid ? profiles[otherUid]?.avatarColor ?? "#999" : "#999";
+  const avatarUrl = isGroup ? null : otherUid ? profiles[otherUid]?.avatarUrl ?? null : null;
   const lastMessage = d.lastMessage
     ? {
         content: (d.lastMessage as any).content,
@@ -233,11 +254,13 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
     isChannel,
     name,
     avatarColor,
+    avatarUrl,
     members: memberUids.map((u) => ({
       id: u,
       username: profiles[u]?.username ?? u,
       displayName: profiles[u]?.displayName ?? u,
       avatarColor: profiles[u]?.avatarColor ?? "#999",
+      avatarUrl: profiles[u]?.avatarUrl ?? null,
       bio: "",
       isPremium: false,
     })),
@@ -276,8 +299,8 @@ export async function startDirectChat(me: User, otherUsername: string): Promise<
       name: null,
       memberUids: [me.id, otherUid].sort(),
       memberProfiles: {
-        [me.id]: { username: me.username, displayName: me.displayName, avatarColor: me.avatarColor },
-        [otherUid]: { username: other.username, displayName: other.displayName, avatarColor: other.avatarColor },
+        [me.id]: toMemberProfile(me),
+        [otherUid]: toMemberProfile(other),
       },
       adminUids: [],
       lastMessage: null,
@@ -304,7 +327,7 @@ export async function createGroupChat(
 
   const uniqueUsernames = Array.from(new Set(memberUsernames.map((u) => u.trim().replace(/^@/, "")).filter(Boolean)));
   const memberProfiles: Record<string, MemberProfile> = {
-    [creator.id]: { username: creator.username, displayName: creator.displayName, avatarColor: creator.avatarColor },
+    [creator.id]: toMemberProfile(creator),
   };
   const memberUids = [creator.id];
 
@@ -317,7 +340,7 @@ export async function createGroupChat(
     if (!userSnap.exists()) continue;
     const u = mapUser(userSnap);
     memberUids.push(uid);
-    memberProfiles[uid] = { username: u.username, displayName: u.displayName, avatarColor: u.avatarColor };
+    memberProfiles[uid] = toMemberProfile(u);
   }
 
   const chatId = (isChannel ? "ch_" : "grp_") + crypto.randomUUID();
@@ -334,6 +357,52 @@ export async function createGroupChat(
     updatedAt: serverTimestamp(),
   });
   return chatId;
+}
+
+/**
+ * Invites more people into an existing group/channel by @username.
+ * A plain group lets any current member invite; a channel needs admin
+ * rights (matched by firestore.rules - see the "member addition" clause).
+ */
+export async function addChatMembers(chat: ChatSummary, usernames: string[]): Promise<void> {
+  const uniqueUsernames = Array.from(new Set(usernames.map((u) => u.trim().replace(/^@/, "")).filter(Boolean)));
+  if (uniqueUsernames.length === 0) return;
+
+  const newMemberUids: string[] = [];
+  const newProfiles: Record<string, MemberProfile> = {};
+
+  for (const username of uniqueUsernames) {
+    const unameSnap = await getDoc(doc(db, "usernames", normalizeUsername(username)));
+    if (!unameSnap.exists()) throw new DataError(`Користувача @${username} не знайдено`);
+    const uid = (unameSnap.data() as { uid: string }).uid;
+    if (chat.members.some((m) => m.id === uid) || newMemberUids.includes(uid)) continue;
+    const userSnap = await getDoc(doc(db, "users", uid));
+    if (!userSnap.exists()) continue;
+    const u = mapUser(userSnap);
+    newMemberUids.push(uid);
+    newProfiles[uid] = toMemberProfile(u);
+  }
+  if (newMemberUids.length === 0) return;
+
+  const patch: Record<string, unknown> = { memberUids: arrayUnion(...newMemberUids) };
+  for (const uid of newMemberUids) patch[`memberProfiles.${uid}`] = newProfiles[uid];
+  await updateDoc(doc(db, "chats", chat.id), patch);
+}
+
+/** Admin-only: kicks a member out of a group/channel entirely. */
+export async function removeChatMember(chatId: string, uid: string): Promise<void> {
+  await updateDoc(doc(db, "chats", chatId), {
+    memberUids: arrayRemove(uid),
+    adminUids: arrayRemove(uid),
+    [`memberProfiles.${uid}`]: deleteField(),
+  });
+}
+
+/** Admin-only: promotes or demotes a member. */
+export async function setChatAdmin(chatId: string, uid: string, makeAdmin: boolean): Promise<void> {
+  await updateDoc(doc(db, "chats", chatId), {
+    adminUids: makeAdmin ? arrayUnion(uid) : arrayRemove(uid),
+  });
 }
 
 /* ---------------- messages ---------------- */

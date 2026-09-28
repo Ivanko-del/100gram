@@ -1,4 +1,7 @@
-import { ChatSummary } from "../types";
+import { FormEvent, useEffect, useState } from "react";
+import { DataError, addChatMembers, removeChatMember, searchUsers, setChatAdmin } from "../data/firestore-api";
+import { useAuth } from "../context/AuthContext";
+import { ChatSummary, PublicUser } from "../types";
 import Avatar from "./Avatar";
 
 interface Props {
@@ -8,6 +11,81 @@ interface Props {
 }
 
 export default function MembersListModal({ chat, onClose, onSelectMember }: Props) {
+  const { user } = useAuth();
+  const isAdmin = !!user && chat.adminUids.includes(user.id);
+  const canInvite = chat.isChannel ? isAdmin : true;
+
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<PublicUser[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [inviting, setInviting] = useState(false);
+  const [busyUid, setBusyUid] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const handle = setTimeout(async () => {
+      try {
+        const res = await searchUsers(q, user?.id ?? "");
+        setResults(res.filter((u) => !chat.members.some((m) => m.id === u.id)));
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, user?.id, chat.members]);
+
+  async function invite(u: PublicUser) {
+    setError(null);
+    setInviting(true);
+    try {
+      await addChatMembers(chat, [u.username]);
+      setQuery("");
+      setResults([]);
+    } catch (err) {
+      setError(err instanceof DataError ? err.message : "Не вдалося додати");
+    } finally {
+      setInviting(false);
+    }
+  }
+
+  function onInviteSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (results.length > 0) invite(results[0]);
+  }
+
+  async function kick(uid: string, name: string) {
+    if (!window.confirm(`Видалити ${name} з ${chat.isChannel ? "каналу" : "групи"}?`)) return;
+    setError(null);
+    setBusyUid(uid);
+    try {
+      await removeChatMember(chat.id, uid);
+    } catch {
+      setError("Не вдалося видалити");
+    } finally {
+      setBusyUid(null);
+    }
+  }
+
+  async function toggleAdmin(uid: string, makeAdmin: boolean) {
+    setError(null);
+    setBusyUid(uid);
+    try {
+      await setChatAdmin(chat.id, uid, makeAdmin);
+    } catch {
+      setError("Не вдалося змінити права");
+    } finally {
+      setBusyUid(null);
+    }
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -18,19 +96,79 @@ export default function MembersListModal({ chat, onClose, onSelectMember }: Prop
           </button>
         </div>
 
-        <div className="member-list">
-          {chat.members.map((m) => (
-            <button key={m.id} className="chat-list-item" onClick={() => onSelectMember(m.id)}>
-              <Avatar name={m.displayName} color={m.avatarColor} />
-              <div className="chat-list-item-body">
-                <div className="chat-list-item-top">
-                  <span className="chat-name">{m.displayName}</span>
-                  {chat.adminUids.includes(m.id) && <span className="admin-badge">адмін</span>}
-                </div>
-                <div className="chat-list-item-bottom">@{m.username}</div>
+        {canInvite && (
+          <form onSubmit={onInviteSubmit}>
+            <label>
+              Запросити
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Пошук за @username" />
+            </label>
+            {query.trim().length >= 2 && (
+              <div className="search-results modal-results">
+                {searching && <div className="search-results-title">Пошук…</div>}
+                {!searching && results.length === 0 && <div className="empty-hint">Нікого не знайдено</div>}
+                {results.map((u) => (
+                  <button
+                    type="button"
+                    className="chat-list-item"
+                    key={u.id}
+                    disabled={inviting}
+                    onClick={() => invite(u)}
+                  >
+                    <Avatar name={u.displayName} color={u.avatarColor} photoUrl={u.avatarUrl} isPremium={u.isPremium} size={36} />
+                    <div className="chat-list-item-body">
+                      <div className="chat-list-item-top">
+                        <span className="chat-name">{u.displayName}</span>
+                      </div>
+                      <div className="chat-list-item-bottom">@{u.username}</div>
+                    </div>
+                  </button>
+                ))}
               </div>
-            </button>
-          ))}
+            )}
+          </form>
+        )}
+
+        {error && <div className="auth-error">{error}</div>}
+
+        <div className="member-list">
+          {chat.members.map((m) => {
+            const memberIsAdmin = chat.adminUids.includes(m.id);
+            const isSelf = m.id === user?.id;
+            return (
+              <div key={m.id} className="member-row">
+                <button className="chat-list-item" onClick={() => onSelectMember(m.id)}>
+                  <Avatar name={m.displayName} color={m.avatarColor} photoUrl={m.avatarUrl} />
+                  <div className="chat-list-item-body">
+                    <div className="chat-list-item-top">
+                      <span className="chat-name">{m.displayName}</span>
+                      {memberIsAdmin && <span className="admin-badge">адмін</span>}
+                    </div>
+                    <div className="chat-list-item-bottom">@{m.username}</div>
+                  </div>
+                </button>
+                {isAdmin && !isSelf && (
+                  <div className="member-actions">
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      disabled={busyUid === m.id}
+                      onClick={() => toggleAdmin(m.id, !memberIsAdmin)}
+                    >
+                      {memberIsAdmin ? "Зняти адміна" : "Зробити адміном"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost member-kick"
+                      disabled={busyUid === m.id}
+                      onClick={() => kick(m.id, m.displayName)}
+                    >
+                      Видалити
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

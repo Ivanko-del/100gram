@@ -70,7 +70,13 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
     <aside className="sidebar">
       <div className="sidebar-header">
         <button className="icon-btn" onClick={() => navigate("/settings")} title="Налаштування">
-          <Avatar name={user?.displayName ?? "?"} color={user?.avatarColor ?? "#999"} size={38} isPremium={user?.isPremium} />
+          <Avatar
+            name={user?.displayName ?? "?"}
+            color={user?.avatarColor ?? "#999"}
+            photoUrl={user?.avatarUrl}
+            size={38}
+            isPremium={user?.isPremium}
+          />
         </button>
         <input
           className="sidebar-search"
@@ -105,7 +111,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
           {results.length === 0 && !searching && <div className="empty-hint">Нікого не знайдено</div>}
           {results.map((u) => (
             <button className="chat-list-item" key={u.id} onClick={() => startChat(u.username)}>
-              <Avatar name={u.displayName} color={u.avatarColor} isPremium={u.isPremium} />
+              <Avatar name={u.displayName} color={u.avatarColor} photoUrl={u.avatarUrl} isPremium={u.isPremium} />
               <div className="chat-list-item-body">
                 <div className="chat-list-item-top">
                   <span className="chat-name">{u.displayName}</span>
@@ -127,7 +133,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
             className={`chat-list-item ${chat.id === activeChatId ? "active" : ""}`}
             onClick={() => navigate(`/chat/${chat.id}`)}
           >
-            <Avatar name={chat.name} color={chat.avatarColor} />
+            <Avatar name={chat.name} color={chat.avatarColor} photoUrl={chat.avatarUrl} />
             <div className="chat-list-item-body">
               <div className="chat-list-item-top">
                 <span className="chat-name">
