@@ -159,7 +159,6 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     displayName: d.displayName as string,
     bio: (d.bio as string) ?? "",
     avatarColor: d.avatarColor as string,
-    avatarUrl: (d.avatarUrl as string) ?? null,
     isPremium: !!d.isPremium,
     premiumUntil: d.premiumUntil ? tsToIso(d.premiumUntil) : null,
     grams: (d.grams as number) ?? 0,
@@ -172,10 +171,7 @@ export function subscribeUser(uid: string, cb: (user: User | null) => void) {
   });
 }
 
-export async function updateProfile(
-  uid: string,
-  patch: { displayName?: string; bio?: string; avatarColor?: string; avatarUrl?: string | null }
-) {
+export async function updateProfile(uid: string, patch: { displayName?: string; bio?: string; avatarColor?: string }) {
   await updateDoc(doc(db, "users", uid), patch);
 }
 
@@ -202,15 +198,7 @@ export async function searchUsers(queryText: string, excludeUid: string): Promis
     .filter((d) => d.id !== excludeUid)
     .map((d) => {
       const u = mapUser(d);
-      return {
-        id: u.id,
-        username: u.username,
-        displayName: u.displayName,
-        bio: u.bio,
-        avatarColor: u.avatarColor,
-        avatarUrl: u.avatarUrl,
-        isPremium: u.isPremium,
-      };
+      return { id: u.id, username: u.username, displayName: u.displayName, bio: u.bio, avatarColor: u.avatarColor, isPremium: u.isPremium };
     });
 }
 
@@ -220,11 +208,10 @@ interface MemberProfile {
   username: string;
   displayName: string;
   avatarColor: string;
-  avatarUrl?: string | null;
 }
 
-function toMemberProfile(u: { username: string; displayName: string; avatarColor: string; avatarUrl?: string | null }): MemberProfile {
-  return { username: u.username, displayName: u.displayName, avatarColor: u.avatarColor, avatarUrl: u.avatarUrl ?? null };
+function toMemberProfile(u: { username: string; displayName: string; avatarColor: string }): MemberProfile {
+  return { username: u.username, displayName: u.displayName, avatarColor: u.avatarColor };
 }
 
 function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUid: string): ChatSummary {
@@ -240,7 +227,6 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
       ? profiles[otherUid]?.displayName ?? "Чат"
       : "Чат";
   const avatarColor = isGroup ? (isChannel ? "#3d8fdb" : "#8774e1") : otherUid ? profiles[otherUid]?.avatarColor ?? "#999" : "#999";
-  const avatarUrl = isGroup ? null : otherUid ? profiles[otherUid]?.avatarUrl ?? null : null;
   const lastMessage = d.lastMessage
     ? {
         content: (d.lastMessage as any).content,
@@ -254,13 +240,11 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
     isChannel,
     name,
     avatarColor,
-    avatarUrl,
     members: memberUids.map((u) => ({
       id: u,
       username: profiles[u]?.username ?? u,
       displayName: profiles[u]?.displayName ?? u,
       avatarColor: profiles[u]?.avatarColor ?? "#999",
-      avatarUrl: profiles[u]?.avatarUrl ?? null,
       bio: "",
       isPremium: false,
     })),

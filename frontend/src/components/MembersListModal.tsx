@@ -114,7 +114,7 @@ export default function MembersListModal({ chat, onClose, onSelectMember }: Prop
                     disabled={inviting}
                     onClick={() => invite(u)}
                   >
-                    <Avatar name={u.displayName} color={u.avatarColor} photoUrl={u.avatarUrl} isPremium={u.isPremium} size={36} />
+                    <Avatar name={u.displayName} color={u.avatarColor} isPremium={u.isPremium} size={36} />
                     <div className="chat-list-item-body">
                       <div className="chat-list-item-top">
                         <span className="chat-name">{u.displayName}</span>
@@ -137,7 +137,7 @@ export default function MembersListModal({ chat, onClose, onSelectMember }: Prop
             return (
               <div key={m.id} className="member-row">
                 <button className="chat-list-item" onClick={() => onSelectMember(m.id)}>
-                  <Avatar name={m.displayName} color={m.avatarColor} photoUrl={m.avatarUrl} />
+                  <Avatar name={m.displayName} color={m.avatarColor} />
                   <div className="chat-list-item-body">
                     <div className="chat-list-item-top">
                       <span className="chat-name">{m.displayName}</span>
