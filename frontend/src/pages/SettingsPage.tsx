@@ -17,11 +17,17 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [tab, setTab] = useState<Tab>("profile");
+  const [tabOpened, setTabOpened] = useState(false);
 
   if (!user) return null;
 
+  function openTab(next: Tab) {
+    setTab(next);
+    setTabOpened(true);
+  }
+
   return (
-    <div className="settings-layout">
+    <div className={`settings-layout ${tabOpened ? "mobile-show-detail" : ""}`}>
       <aside className="settings-nav">
         <button className="icon-btn back-btn" onClick={() => navigate("/")}>
           ← Назад до чатів
@@ -33,16 +39,16 @@ export default function SettingsPage() {
           {user.isPremium && <div className="premium-chip">⭐ Преміум активний</div>}
         </div>
         <nav>
-          <button className={tab === "profile" ? "active" : ""} onClick={() => setTab("profile")}>
+          <button className={tab === "profile" ? "active" : ""} onClick={() => openTab("profile")}>
             👤 Профіль
           </button>
-          <button className={tab === "appearance" ? "active" : ""} onClick={() => setTab("appearance")}>
+          <button className={tab === "appearance" ? "active" : ""} onClick={() => openTab("appearance")}>
             🎨 Вигляд
           </button>
-          <button className={tab === "wallet" ? "active" : ""} onClick={() => setTab("wallet")}>
+          <button className={tab === "wallet" ? "active" : ""} onClick={() => openTab("wallet")}>
             🥃 Гаманець · {user.grams} ГРАМ
           </button>
-          <button className={tab === "premium" ? "active" : ""} onClick={() => setTab("premium")}>
+          <button className={tab === "premium" ? "active" : ""} onClick={() => openTab("premium")}>
             ⭐ Преміум
           </button>
         </nav>
@@ -52,6 +58,9 @@ export default function SettingsPage() {
       </aside>
 
       <main className="settings-content">
+        <button className="mobile-back-btn settings-mobile-back" onClick={() => setTabOpened(false)}>
+          ← Налаштування
+        </button>
         {tab === "profile" && <ProfileTab user={user} />}
         {tab === "appearance" && <AppearanceTab />}
         {tab === "wallet" && <WalletTab user={user} />}

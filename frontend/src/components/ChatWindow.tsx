@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { sendMessage as sendMessageApi, setTyping, subscribeMessages, subscribeTyping } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
 import { ChatMessage, ChatSummary } from "../types";
@@ -12,6 +13,7 @@ interface Props {
 
 export default function ChatWindow({ chat }: Props) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
@@ -60,6 +62,9 @@ export default function ChatWindow({ chat }: Props) {
   return (
     <section className="chat-window">
       <header className="chat-window-header">
+        <button className="mobile-back-btn" onClick={() => navigate("/")} aria-label="Назад до чатів">
+          ←
+        </button>
         <Avatar name={chat.name} color={chat.avatarColor} />
         <div>
           <div className="chat-window-title">{chat.name}</div>

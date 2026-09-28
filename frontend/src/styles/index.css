@@ -762,13 +762,100 @@ textarea {
   color: var(--accent);
 }
 
+.mobile-back-btn {
+  display: none;
+}
+
 @media (max-width: 860px) {
+  /* Phones get a list/detail flow instead of two fixed columns: the
+     sidebar (or settings nav) is the "list" screen, and picking a chat
+     or a settings tab slides in the "detail" screen with a back button -
+     never both hidden, never a dead end with no way to navigate. */
   .app-layout,
   .settings-layout {
     grid-template-columns: 1fr;
   }
-  .sidebar,
-  .settings-nav {
+
+  .app-layout > .sidebar,
+  .app-layout > .chat-window,
+  .app-layout > .chat-window-empty,
+  .settings-layout > .settings-nav,
+  .settings-layout > .settings-content {
     display: none;
+  }
+
+  .app-layout > .sidebar,
+  .settings-layout > .settings-nav {
+    display: flex;
+  }
+
+  .app-layout.mobile-show-detail > .sidebar {
+    display: none;
+  }
+  .app-layout.mobile-show-detail > .chat-window {
+    display: flex;
+  }
+  .app-layout.mobile-show-detail > .chat-window-empty {
+    display: flex;
+  }
+
+  .settings-layout.mobile-show-detail > .settings-nav {
+    display: none;
+  }
+  .settings-layout.mobile-show-detail > .settings-content {
+    display: flex;
+  }
+
+  .mobile-back-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 20px;
+    cursor: pointer;
+    border-radius: 50%;
+  }
+
+  .mobile-back-btn:hover {
+    background: var(--bg-elevated);
+  }
+
+  .settings-mobile-back {
+    width: fit-content;
+    justify-content: flex-start;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+
+  .settings-content {
+    flex-direction: column;
+    padding: 16px;
+  }
+
+  .chat-window-header,
+  .message-input-bar,
+  .message-list {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .message-bubble {
+    max-width: 82%;
+  }
+
+  /* 16px minimum stops iOS Safari from auto-zooming the page on focus */
+  .sidebar-search,
+  .message-input,
+  .auth-card input,
+  .settings-panel input,
+  .settings-panel textarea {
+    font-size: 16px;
   }
 }

@@ -30,7 +30,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="app-layout">
+    <div className={`app-layout ${chatId ? "mobile-show-detail" : ""}`}>
       <Sidebar chats={chats} activeChatId={chatId} onChatCreated={handleChatCreated} />
       {activeChat ? (
         <ChatWindow chat={activeChat} />
