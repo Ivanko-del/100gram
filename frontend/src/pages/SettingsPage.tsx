@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DataError, buyPremium, subscribeTransactions, transferGrams, updateProfile } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
+import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import { AVATAR_COLORS, PREMIUM_PLANS } from "../constants";
 import { PremiumPlan, User, WalletTransaction } from "../types";
 import Avatar from "../components/Avatar";
@@ -117,6 +118,7 @@ function ProfileTab({ user }: TabProps) {
 
 function AppearanceTab() {
   const [theme, setTheme] = useState<string>(() => localStorage.getItem("stogram_theme") ?? "dark");
+  const { installed, canPromptInstall, promptInstall, isIos } = useInstallPrompt();
 
   function applyTheme(next: string) {
     setTheme(next);
@@ -136,6 +138,29 @@ function AppearanceTab() {
           ☀️ Світла
         </button>
       </div>
+
+      <h3>Застосунок на телефон і ПК</h3>
+      {installed ? (
+        <p className="settings-hint">✓ Уже встановлено як застосунок на цьому пристрої</p>
+      ) : canPromptInstall ? (
+        <>
+          <p className="settings-hint">
+            Постав 100 ГРАМ як застосунок — окрема іконка, вікно без адресного рядка, працює офлайн.
+          </p>
+          <button className="btn-primary" style={{ width: "fit-content" }} onClick={promptInstall}>
+            📲 Встановити застосунок
+          </button>
+        </>
+      ) : isIos ? (
+        <p className="settings-hint">
+          На iPhone/iPad: натисни кнопку "Поділитися" внизу Safari → «На екран «Домій»».
+        </p>
+      ) : (
+        <p className="settings-hint">
+          Відкрий цю сторінку в Chrome/Edge — з'явиться іконка встановлення в адресному рядку,
+          або цей пристрій уже не пропонує встановлення.
+        </p>
+      )}
     </div>
   );
 }
