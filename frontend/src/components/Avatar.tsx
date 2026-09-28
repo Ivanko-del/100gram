@@ -1,11 +1,12 @@
 interface AvatarProps {
   name: string;
   color: string;
+  photoUrl?: string | null;
   size?: number;
   isPremium?: boolean;
 }
 
-export default function Avatar({ name, color, size = 44, isPremium }: AvatarProps) {
+export default function Avatar({ name, color, photoUrl, size = 44, isPremium }: AvatarProps) {
   const initials = name
     .trim()
     .split(/\s+/)
@@ -20,9 +21,13 @@ export default function Avatar({ name, color, size = 44, isPremium }: AvatarProp
       className={`avatar-wrap ${isPremium ? "avatar-wrap-premium" : ""}`}
       style={{ width: size + ringPad * 2, height: size + ringPad * 2, padding: ringPad }}
     >
-      <div className="avatar" style={{ backgroundColor: color, width: size, height: size, fontSize: size * 0.4 }}>
-        {initials || "?"}
-      </div>
+      {photoUrl ? (
+        <img className="avatar avatar-photo" src={photoUrl} alt={name} style={{ width: size, height: size }} />
+      ) : (
+        <div className="avatar" style={{ backgroundColor: color, width: size, height: size, fontSize: size * 0.4 }}>
+          {initials || "?"}
+        </div>
+      )}
       {isPremium && <span className="avatar-premium-badge">⭐</span>}
     </div>
   );

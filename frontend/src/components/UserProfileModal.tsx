@@ -61,7 +61,7 @@ export default function UserProfileModal({ uid, onClose }: Props) {
         {profile && (
           <>
             <div className="profile-card-identity">
-              <Avatar name={profile.displayName} color={profile.avatarColor} size={72} isPremium={profile.isPremium} />
+              <Avatar name={profile.displayName} color={profile.avatarColor} photoUrl={profile.avatarUrl} size={72} isPremium={profile.isPremium} />
               <div className="settings-profile-name">{profile.displayName}</div>
               <div className="settings-profile-username">@{profile.username}</div>
               {profile.isPremium && (

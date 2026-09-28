@@ -85,7 +85,7 @@ export default function ChatWindow({ chat }: Props) {
           ←
         </button>
         <button type="button" className="chat-header-info" onClick={openHeaderInfo}>
-          <Avatar name={chat.name} color={chat.avatarColor} />
+          <Avatar name={chat.name} color={chat.avatarColor} photoUrl={chat.avatarUrl} />
           <div>
             <div className="chat-window-title">
               {isChannel ? "📢 " : isGroup ? "👥 " : ""}

@@ -548,6 +548,11 @@ textarea {
   font-weight: 700;
 }
 
+.avatar-photo {
+  object-fit: cover;
+  display: block;
+}
+
 .avatar-premium-badge {
   position: absolute;
   bottom: -2px;
@@ -882,6 +887,23 @@ textarea {
   font-size: 14px;
   outline: none;
   resize: vertical;
+}
+
+.avatar-photo-picker {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.avatar-photo-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.avatar-upload-btn {
+  cursor: pointer;
 }
 
 .color-swatches {
