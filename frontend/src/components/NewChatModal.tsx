@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useState } from "react";
 import { DataError, createGroupChat, searchUsers } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
 import { PublicUser } from "../types";
@@ -19,17 +19,24 @@ export default function NewChatModal({ onClose, onCreated }: Props) {
   const [results, setResults] = useState<PublicUser[]>([]);
   const [selected, setSelected] = useState<PublicUser[]>([]);
   const [creating, setCreating] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2) {
       setResults([]);
+      setSearching(false);
       return;
     }
+    setSearching(true);
     const handle = setTimeout(async () => {
-      const res = await searchUsers(q, user?.id ?? "");
-      setResults(res.filter((u) => !selected.some((s) => s.id === u.id)));
+      try {
+        const res = await searchUsers(q, user?.id ?? "");
+        setResults(res.filter((u) => !selected.some((s) => s.id === u.id)));
+      } finally {
+        setSearching(false);
+      }
     }, 300);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -43,6 +50,15 @@ export default function NewChatModal({ onClose, onCreated }: Props) {
 
   function removeMember(uid: string) {
     setSelected((prev) => prev.filter((s) => s.id !== uid));
+  }
+
+  // On mobile the on-screen keyboard's "Done"/Enter otherwise triggers an
+  // implicit form submit before the user gets to tap a search result -
+  // treat Enter as "add the top match" instead.
+  function onQueryKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (results.length > 0) addMember(results[0]);
   }
 
   async function onSubmit(e: FormEvent) {
@@ -104,7 +120,12 @@ export default function NewChatModal({ onClose, onCreated }: Props) {
 
         <label>
           {mode === "channel" ? "Підписники" : "Учасники"}
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Пошук за @username" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onQueryKeyDown}
+            placeholder="Пошук за @username"
+          />
         </label>
 
         {selected.length > 0 && (
@@ -120,8 +141,10 @@ export default function NewChatModal({ onClose, onCreated }: Props) {
           </div>
         )}
 
-        {results.length > 0 && (
+        {query.trim().length >= 2 && (
           <div className="search-results modal-results">
+            {searching && <div className="search-results-title">Пошук…</div>}
+            {!searching && results.length === 0 && <div className="empty-hint">Нікого не знайдено</div>}
             {results.map((u) => (
               <button type="button" className="chat-list-item" key={u.id} onClick={() => addMember(u)}>
                 <Avatar name={u.displayName} color={u.avatarColor} isPremium={u.isPremium} size={36} />
@@ -138,7 +161,7 @@ export default function NewChatModal({ onClose, onCreated }: Props) {
 
         {error && <div className="auth-error">{error}</div>}
 
-        <button className="btn-primary" type="submit" disabled={creating}>
+        <button className="btn-primary" type="submit" disabled={creating || !name.trim() || selected.length === 0}>
           {creating ? "Створення…" : `Створити ${mode === "channel" ? "канал" : "групу"}`}
         </button>
       </form>
