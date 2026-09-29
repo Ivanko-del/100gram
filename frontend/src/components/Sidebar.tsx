@@ -87,9 +87,6 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
         <div className="grams-pill" onClick={() => navigate("/settings")} title="Гаманець">
           🥃 {user?.grams ?? 0}
         </div>
-        <button className="icon-btn new-chat-btn" onClick={() => setShowNewChatModal(true)} title="Нова група або канал" aria-label="Нова група або канал">
-          ＋
-        </button>
       </div>
 
       {showNewChatModal && (
@@ -147,6 +144,15 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
           </button>
         ))}
       </div>
+
+      <button
+        className="fab-new-chat"
+        onClick={() => setShowNewChatModal(true)}
+        title="Нова група або канал"
+        aria-label="Нова група або канал"
+      >
+        ＋
+      </button>
 
       <button className="logout-btn" onClick={logout}>
         Вийти

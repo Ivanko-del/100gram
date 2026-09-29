@@ -231,6 +231,7 @@ textarea {
 }
 
 .sidebar {
+  position: relative;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
   display: flex;
@@ -253,9 +254,9 @@ textarea {
 .sidebar-search {
   flex: 1;
   /* inputs default to min-width:auto in flexbox, so without this they
-     refuse to shrink and push later siblings (the grams pill, the "+"
-     button) outside .sidebar's overflow:hidden - they'd render, just
-     clipped off-screen, which is worse than merely misaligned. */
+     refuse to shrink and push the grams pill outside .sidebar's
+     overflow:hidden - it'd render, just clipped off-screen, which is
+     worse than merely misaligned. */
   min-width: 0;
   background: var(--bg-input);
   border: 1px solid var(--border);
@@ -286,21 +287,32 @@ textarea {
   padding: 8px 16px;
 }
 
-.new-chat-btn {
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
+.fab-new-chat {
+  position: absolute;
+  right: 18px;
+  bottom: 78px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent-strong);
+  color: white;
+  font-size: 26px;
+  line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  font-size: 20px;
-  color: var(--text-secondary);
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  z-index: 5;
 }
 
-.new-chat-btn:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
+.fab-new-chat:hover {
+  filter: brightness(1.08);
+}
+
+.fab-new-chat:active {
+  transform: scale(0.96);
 }
 
 /* ---------- New chat modal ---------- */
@@ -1544,7 +1556,7 @@ textarea {
   }
 
   /* extra breathing room on narrow phones so the search input never
-     has to fight the avatar/grams-pill/"+" buttons for space */
+     has to fight the avatar/grams-pill for space */
   .sidebar-header {
     gap: 6px;
     padding: 10px;
@@ -1553,5 +1565,13 @@ textarea {
   .grams-pill {
     padding: 8px 9px;
     font-size: 12.5px;
+  }
+
+  .fab-new-chat {
+    width: 50px;
+    height: 50px;
+    right: 14px;
+    bottom: 72px;
+    font-size: 22px;
   }
 }
