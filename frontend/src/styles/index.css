@@ -1008,6 +1008,8 @@ textarea {
 }
 
 .settings-nav {
+  min-height: 0;
+  overflow-y: auto;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
   display: flex;
@@ -1590,6 +1592,8 @@ textarea {
 
   .settings-content {
     flex-direction: column;
+    justify-content: flex-start;
+    align-items: stretch;
     padding: 16px;
   }
 
