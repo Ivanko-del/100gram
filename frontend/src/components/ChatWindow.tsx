@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FirestoreError } from "firebase/firestore";
 import { deleteMessage, sendMessage as sendMessageApi, setTyping, subscribeMessages, subscribeTyping } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
 import { isSiteAdmin } from "../constants";
@@ -55,14 +54,16 @@ export default function ChatWindow({ chat }: Props) {
   }, [chat.id]);
 
   function describeSendError(err: unknown): string {
-    if (err instanceof FirestoreError) {
-      if (err.code === "permission-denied") {
-        return "Немає прав надіслати це тут (можливо, тебе заглушено або це доступно лише адмінам)";
-      }
-      return `Не вдалося надіслати (${err.code}): ${err.message}`;
+    // Duck-type on `.code` rather than `instanceof FirestoreError` - Firebase
+    // sometimes throws these as plain FirebaseError instances, which fails
+    // an instanceof check against the Firestore-specific subclass even for
+    // a genuine permission-denied.
+    const code = typeof (err as { code?: unknown })?.code === "string" ? (err as { code: string }).code : null;
+    if (code === "permission-denied") {
+      return "Немає прав надіслати це тут (можливо, тебе заглушено або це доступно лише адмінам)";
     }
     const msg = err instanceof Error ? err.message : String(err);
-    return `Не вдалося надіслати: ${msg}`;
+    return code ? `Не вдалося надіслати (${code}): ${msg}` : `Не вдалося надіслати: ${msg}`;
   }
 
   function sendMessage(content: string) {

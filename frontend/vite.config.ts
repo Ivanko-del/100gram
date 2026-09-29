@@ -7,6 +7,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
+      // We call registerSW() ourselves in main.tsx (with immediate: true),
+      // so the plugin shouldn't also inject its own bare registration -
+      // that default has no reload-on-update logic and is how an already
+      // installed PWA gets stuck running stale code indefinitely.
+      injectRegister: false,
       includeAssets: ["icons/favicon-32.png", "icons/apple-touch-icon.png"],
       manifest: {
         id: "/",
@@ -31,6 +36,13 @@ export default defineConfig({
         // never served stale - only static assets are cached for offline use.
         globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
         navigateFallback: "/index.html",
+        // A new service worker otherwise sits "waiting" until every open
+        // tab/instance of the PWA is fully closed - which for a home-screen
+        // app that's just backgrounded can be never. These make the new
+        // version take over immediately instead.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
       },
     }),
   ],
