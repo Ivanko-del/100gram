@@ -1,10 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { deleteMessage, sendMessage as sendMessageApi, setTyping, subscribeMessages, subscribeTyping } from "../data/firestore-api";
+import {
+  deleteMessage,
+  sendMessage as sendMessageApi,
+  setTyping,
+  subscribeMessages,
+  subscribeTyping,
+  toggleReaction,
+} from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
-import { isSiteAdmin } from "../constants";
+import { FREE_REACTIONS_PER_MESSAGE, PREMIUM_REACTIONS_PER_MESSAGE, REACTIONS_PREMIUM, isSiteAdmin } from "../constants";
 import { ChatMessage, ChatSummary } from "../types";
 import Avatar from "./Avatar";
+import UserName from "./UserName";
 import MessageBubble from "./MessageBubble";
 import MessageInput from "./MessageInput";
 import MembersListModal from "./MembersListModal";
@@ -83,6 +91,20 @@ export default function ChatWindow({ chat }: Props) {
     setTyping(chat.id, user.id, user.displayName, isTyping).catch(() => {});
   }
 
+  function handleReact(message: ChatMessage, emoji: string) {
+    if (!user) return;
+    const mine = Object.entries(message.reactions)
+      .filter(([, uids]) => uids.includes(user.id))
+      .map(([e]) => e);
+    if (!mine.includes(emoji) && REACTIONS_PREMIUM.includes(emoji) && !user.isPremium) {
+      setSendError("Ці реакції доступні з преміумом ⭐");
+      return;
+    }
+    setSendError(null);
+    const limit = user.isPremium ? PREMIUM_REACTIONS_PER_MESSAGE : FREE_REACTIONS_PER_MESSAGE;
+    toggleReaction(chat.id, message.id, user.id, emoji, mine, limit).catch((err) => setSendError(describeSendError(err)));
+  }
+
   function handleDelete(messageId: string) {
     deleteMessage(chat.id, messageId).catch((err) => setSendError(describeSendError(err)));
   }
@@ -96,7 +118,7 @@ export default function ChatWindow({ chat }: Props) {
   const typingLabel = typingUsers.length > 0 ? `${typingUsers.join(", ")} друкує…` : null;
   const subtitle =
     typingLabel ??
-    (chat.isSaved ? "Твої нотатки й файли" : isChannel ? `${chat.members.length} підписників` : isGroup ? `${chat.members.length} учасників` : "в мережі");
+    (chat.isSaved ? "Твої нотатки й файли" : !isGroup && chat.statusText ? chat.statusText : isChannel ? `${chat.members.length} підписників` : isGroup ? `${chat.members.length} учасників` : "в мережі");
   const otherMember = !isGroup ? chat.members.find((m) => m.id !== user?.id) : undefined;
 
   function openHeaderInfo() {
@@ -118,7 +140,7 @@ export default function ChatWindow({ chat }: Props) {
           <div>
             <div className="chat-window-title">
               {isChannel ? "📢 " : isGroup ? "👥 " : ""}
-              {chat.name}
+              <UserName name={chat.name} emoji={chat.emojiStatus} color={chat.nameColor} />
             </div>
             <div className="chat-window-subtitle">{subtitle}</div>
           </div>
@@ -156,6 +178,9 @@ export default function ChatWindow({ chat }: Props) {
               showSender={showSender}
               canDelete={isOwn || isAppAdmin}
               onDelete={handleDelete}
+              myUid={user?.id}
+              isPremium={user?.isPremium}
+              onReact={handleReact}
             />
           );
         })}

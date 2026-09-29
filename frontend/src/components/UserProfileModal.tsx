@@ -2,9 +2,10 @@ import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getUserProfile, setGlobalMute, setUserBadge, startDirectChat } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
-import { BADGE_COLORS, isSiteAdmin } from "../constants";
+import { BADGE_COLORS, PROFILE_BANNERS, isSiteAdmin } from "../constants";
 import { User } from "../types";
 import Avatar from "./Avatar";
+import UserName from "./UserName";
 
 interface Props {
   uid: string;
@@ -99,9 +100,19 @@ export default function UserProfileModal({ uid, onClose }: Props) {
 
         {profile && (
           <>
-            <div className="profile-card-identity">
+            {profile.isPremium && profile.profileBanner && PROFILE_BANNERS[profile.profileBanner] && (
+              <div className="profile-banner" style={{ background: PROFILE_BANNERS[profile.profileBanner] }} />
+            )}
+            <div className={`profile-card-identity ${profile.isPremium && profile.profileBanner ? "with-banner" : ""}`}>
               <Avatar name={profile.displayName} color={profile.avatarColor} photoUrl={profile.avatarUrl} size={72} isPremium={profile.isPremium} />
-              <div className="settings-profile-name">{profile.displayName}</div>
+              <div className="settings-profile-name">
+                <UserName
+                  name={profile.displayName}
+                  emoji={profile.isPremium ? profile.emojiStatus : null}
+                  color={profile.isPremium ? profile.nameColor : null}
+                />
+              </div>
+              {profile.isPremium && profile.statusText && <div className="profile-status-text">{profile.statusText}</div>}
               <div className="settings-profile-username">@{profile.username}</div>
               <div className="profile-badges">
                 {profile.isPremium && (

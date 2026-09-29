@@ -10,6 +10,7 @@ import {
   type User as FirebaseAuthUser,
 } from "firebase/auth";
 import {
+  FieldPath,
   Timestamp,
   arrayRemove,
   arrayUnion,
@@ -256,6 +257,10 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     grams: (d.grams as number) ?? 0,
     mutedGlobally: !!d.mutedGlobally,
     birthDate: (d.birthDate as string) ?? null,
+    emojiStatus: (d.emojiStatus as string) ?? null,
+    statusText: (d.statusText as string) ?? null,
+    nameColor: (d.nameColor as string) ?? null,
+    profileBanner: (d.profileBanner as string) ?? null,
     phone: (d.phone as string) ?? null,
     hideBirthDate: !!d.hideBirthDate,
     pinnedChats: (d.pinnedChats as string[]) ?? [],
@@ -274,7 +279,7 @@ export function subscribeUser(uid: string, cb: (user: User | null) => void) {
 
 export async function updateProfile(
   uid: string,
-  patch: { displayName?: string; bio?: string; avatarColor?: string; avatarUrl?: string | null; showAdminBadge?: boolean; birthDate?: string | null; hideBirthDate?: boolean }
+  patch: { displayName?: string; bio?: string; avatarColor?: string; avatarUrl?: string | null; showAdminBadge?: boolean; birthDate?: string | null; hideBirthDate?: boolean; emojiStatus?: string | null; statusText?: string | null; nameColor?: string | null; profileBanner?: string | null }
 ) {
   await updateDoc(doc(db, "users", uid), patch);
 }
@@ -607,7 +612,10 @@ function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, c
       username: (d.senderUsername as string) ?? "",
       displayName: d.senderDisplayName as string,
       avatarColor: d.senderAvatarColor as string,
+      emojiStatus: (d.senderEmojiStatus as string) ?? null,
+      nameColor: (d.senderNameColor as string) ?? null,
     },
+    reactions: (d.reactions as Record<string, string[]>) ?? {},
   };
 }
 
@@ -628,6 +636,9 @@ export async function sendMessage(chatId: string, sender: User, content: string,
     senderUsername: sender.username,
     senderDisplayName: sender.displayName,
     senderAvatarColor: sender.avatarColor,
+    // premium cosmetics travel with the message so group chats can show them
+    ...(sender.isPremium && sender.emojiStatus ? { senderEmojiStatus: sender.emojiStatus } : {}),
+    ...(sender.isPremium && sender.nameColor ? { senderNameColor: sender.nameColor } : {}),
     content,
     type,
     createdAt,
@@ -637,6 +648,29 @@ export async function sendMessage(chatId: string, sender: User, content: string,
     lastMessage: { content: type === "image" ? "📷 Фото" : content, senderUid: sender.id, createdAt },
   });
   await batch.commit();
+}
+
+/** Adds/removes the user's reaction on a message. `current` is the emoji this
+ * user already has on it; when they are at their per-message limit the oldest
+ * one is swapped out (Telegram behaviour with a single free reaction). */
+export async function toggleReaction(
+  chatId: string,
+  messageId: string,
+  uid: string,
+  emoji: string,
+  mine: string[],
+  limitPerMessage: number
+): Promise<void> {
+  const ref = doc(db, "chats", chatId, "messages", messageId);
+  if (mine.includes(emoji)) {
+    await updateDoc(ref, new FieldPath("reactions", emoji), arrayRemove(uid));
+    return;
+  }
+  const args: unknown[] = [new FieldPath("reactions", emoji), arrayUnion(uid)];
+  if (mine.length >= limitPerMessage) {
+    args.push(new FieldPath("reactions", mine[0]), arrayRemove(uid));
+  }
+  await (updateDoc as (r: unknown, ...a: unknown[]) => Promise<void>)(ref, ...args);
 }
 
 /** Deletes a message. Firestore rules allow this for the message's own

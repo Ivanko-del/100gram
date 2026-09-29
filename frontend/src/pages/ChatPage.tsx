@@ -66,7 +66,17 @@ export default function ChatPage() {
   const liveChats = chats.map((c) => {
     if (c.isGroup || c.isSaved) return c;
     const peer = profiles[c.members.find((m) => m.id !== user?.id)?.id ?? ""];
-    return peer ? { ...c, name: peer.displayName, avatarColor: peer.avatarColor, avatarUrl: peer.avatarUrl ?? null } : c;
+    if (!peer) return c;
+    return {
+      ...c,
+      name: peer.displayName,
+      avatarColor: peer.avatarColor,
+      avatarUrl: peer.avatarUrl ?? null,
+      // cosmetics count only while the peer's premium is active
+      emojiStatus: peer.isPremium ? peer.emojiStatus ?? null : null,
+      nameColor: peer.isPremium ? peer.nameColor ?? null : null,
+      statusText: peer.isPremium ? peer.statusText ?? null : null,
+    };
   });
 
   const activeChat = liveChats.find((c) => c.id === chatId);

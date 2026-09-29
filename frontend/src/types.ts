@@ -21,6 +21,11 @@ export interface User {
   phone?: string | null;
   /** Hide the birth date from other users' view of this profile */
   hideBirthDate?: boolean;
+  /** Premium cosmetics, shown only while premium is active */
+  emojiStatus?: string | null;
+  statusText?: string | null;
+  nameColor?: string | null;
+  profileBanner?: string | null;
   /** Per-user chat list prefs ("Telegram-style" pin / archive / delete-for-me) */
   pinnedChats?: string[];
   archivedChats?: string[];
@@ -39,6 +44,9 @@ export interface PublicUser {
   avatarUrl?: string | null;
   isPremium: boolean;
   lastSeenAt?: string;
+  emojiStatus?: string | null;
+  nameColor?: string | null;
+  statusText?: string | null;
 }
 
 export interface ChatSummary {
@@ -53,6 +61,10 @@ export interface ChatSummary {
   mutedUids: string[];
   /** The per-user "Saved messages" chat (only member is its owner) */
   isSaved?: boolean;
+  /** Direct chats: the other person's premium cosmetics */
+  emojiStatus?: string | null;
+  nameColor?: string | null;
+  statusText?: string | null;
   lastMessage: { content: string; createdAt: string; senderId: string } | null;
   updatedAt: string;
 }
@@ -62,6 +74,8 @@ export interface MessageSender {
   username: string;
   displayName: string;
   avatarColor: string;
+  emojiStatus?: string | null;
+  nameColor?: string | null;
 }
 
 export interface ChatMessage {
@@ -72,6 +86,8 @@ export interface ChatMessage {
   createdAt: string;
   editedAt?: string | null;
   sender: MessageSender;
+  /** emoji -> uids that reacted with it */
+  reactions: Record<string, string[]>;
 }
 
 export interface PremiumPlan {

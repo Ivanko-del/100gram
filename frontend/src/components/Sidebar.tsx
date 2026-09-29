@@ -12,6 +12,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { ChatSummary, PublicUser } from "../types";
 import Avatar from "./Avatar";
+import UserName from "./UserName";
 import LockPrompt from "./LockPrompt";
 import LockSetupModal from "./LockSetupModal";
 import { setChatHidden, setChatLocked } from "../data/chat-lock";
@@ -339,7 +340,9 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                 {theme === "dark" ? "☀️" : "🌙"}
               </button>
             </div>
-            <div className="drawer-name">{user?.displayName}</div>
+            <div className="drawer-name">
+              <UserName name={user?.displayName ?? ""} emoji={user?.isPremium ? user.emojiStatus : null} color={user?.isPremium ? user.nameColor : null} />
+            </div>
             <div className="drawer-username">@{user?.username}</div>
 
             <div className="drawer-menu">
@@ -480,7 +483,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                   <span className="chat-name">
                     {isLocked(chat.id) ? "🔒 " : ""}
                     {chat.isChannel ? "📢 " : chat.isGroup ? "👥 " : ""}
-                    {chat.name}
+                    <UserName name={chat.name} emoji={chat.emojiStatus} color={chat.nameColor} />
                   </span>
                   <span className="chat-time">
                     {pinned.includes(chat.id) && <span className="chat-pin" aria-label="Закріплено">📌</span>}

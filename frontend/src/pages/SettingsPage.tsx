@@ -25,9 +25,15 @@ import {
   AVATAR_COLORS,
   FREE_BIO_LIMIT,
   FREE_PIN_LIMIT,
+  NAME_COLORS,
+  PROFILE_BANNERS,
+  STATUS_EMOJIS,
+  STATUS_TEXT_LIMIT,
   PREMIUM_AVATAR_COLORS,
   PREMIUM_BIO_LIMIT,
   PREMIUM_PIN_LIMIT,
+  PREMIUM_REACTIONS_PER_MESSAGE,
+  FREE_REACTIONS_PER_MESSAGE,
   PREMIUM_PLANS, SITE_ADMIN_USERNAME, isSiteAdmin } from "../constants";
 import { PremiumPlan, PublicUser, User, WalletTransaction } from "../types";
 import Avatar from "../components/Avatar";
@@ -152,6 +158,31 @@ function ProfileTab({ user }: TabProps) {
   const [error, setError] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [emojiStatus, setEmojiStatus] = useState(user.emojiStatus ?? "");
+  const [statusText, setStatusText] = useState(user.statusText ?? "");
+  const [nameColor, setNameColor] = useState(user.nameColor ?? "");
+  const [banner, setBanner] = useState(user.profileBanner ?? "");
+  const [gifUrl, setGifUrl] = useState("");
+  const [premiumHint, setPremiumHint] = useState(false);
+
+  async function applyGifAvatar() {
+    const url = gifUrl.trim();
+    if (!/^https:\/\/\S+$/i.test(url)) {
+      setPhotoError("Встав пряме посилання на картинку чи GIF, що починається з https://");
+      return;
+    }
+    setPhotoError(null);
+    setUploadingPhoto(true);
+    try {
+      await updateProfile(user.id, { avatarUrl: url });
+      setAvatarUrl(url);
+      setGifUrl("");
+    } catch {
+      setPhotoError("Не вдалося встановити аватарку");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
@@ -159,7 +190,21 @@ function ProfileTab({ user }: TabProps) {
     setError(null);
     setSaved(false);
     try {
-      await updateProfile(user.id, { displayName, bio, avatarColor, birthDate: birthDate || null });
+      await updateProfile(user.id, {
+        displayName,
+        bio,
+        avatarColor,
+        birthDate: birthDate || null,
+        // premium cosmetics are only written for active premium accounts
+        ...(user.isPremium
+          ? {
+              emojiStatus: emojiStatus || null,
+              statusText: statusText.trim() || null,
+              nameColor: nameColor || null,
+              profileBanner: banner || null,
+            }
+          : {}),
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e2) {
@@ -264,6 +309,76 @@ function ProfileTab({ user }: TabProps) {
           );
         })}
       </div>
+
+      <h3>Преміум-оформлення ⭐</h3>
+      {!user.isPremium && (
+        <p className="settings-hint">
+          Статус-емодзі, колір імені, банер профілю та анімована аватарка доступні з преміумом — дивись вкладку «Преміум».
+        </p>
+      )}
+      <fieldset className="premium-fieldset" disabled={!user.isPremium}>
+        <label>Емодзі-статус біля імені</label>
+        <div className="emoji-grid">
+          <button type="button" className={`emoji-cell ${!emojiStatus ? "selected" : ""}`} onClick={() => setEmojiStatus("")}>
+            ∅
+          </button>
+          {STATUS_EMOJIS.map((e) => (
+            <button type="button" key={e} className={`emoji-cell ${emojiStatus === e ? "selected" : ""}`} onClick={() => setEmojiStatus(e)}>
+              {e}
+            </button>
+          ))}
+        </div>
+
+        <label>
+          Текст статусу <span className="settings-hint">(показується в шапці приватного чату замість «в мережі»)</span>
+          <input value={statusText} onChange={(e) => setStatusText(e.target.value)} maxLength={STATUS_TEXT_LIMIT} placeholder="Наприклад: на зв'язку після 18:00" />
+        </label>
+
+        <label>Колір імені в чатах</label>
+        <div className="color-swatches">
+          <button type="button" className={`swatch swatch-none ${!nameColor ? "selected" : ""}`} onClick={() => setNameColor("")}>
+            ∅
+          </button>
+          {NAME_COLORS.map((c) => (
+            <button
+              type="button"
+              key={c}
+              className={`swatch ${nameColor === c ? "selected" : ""}`}
+              style={{ backgroundColor: c }}
+              onClick={() => setNameColor(c)}
+            />
+          ))}
+        </div>
+
+        <label>Банер профілю</label>
+        <div className="banner-grid">
+          <button type="button" className={`banner-cell banner-none ${!banner ? "selected" : ""}`} onClick={() => setBanner("")}>
+            Без банера
+          </button>
+          {Object.entries(PROFILE_BANNERS).map(([id, bg]) => (
+            <button
+              type="button"
+              key={id}
+              className={`banner-cell ${banner === id ? "selected" : ""}`}
+              style={{ background: bg }}
+              aria-label={id}
+              onClick={() => setBanner(id)}
+            />
+          ))}
+        </div>
+      </fieldset>
+
+      {user.isPremium && (
+        <>
+          <label>
+            Анімована аватарка (GIF за посиланням)
+            <input value={gifUrl} onChange={(e) => setGifUrl(e.target.value)} placeholder="https://…/avatar.gif" />
+          </label>
+          <button type="button" className="btn-ghost" disabled={uploadingPhoto || !gifUrl.trim()} onClick={applyGifAvatar}>
+            Поставити як аватарку
+          </button>
+        </>
+      )}
       {error && <div className="auth-error">{error}</div>}
       <button className="btn-primary" type="submit" disabled={saving}>
         {saving ? "Збереження…" : saved ? "Збережено ✓" : "Зберегти"}
@@ -868,6 +983,10 @@ function PremiumTab({ user }: TabProps) {
         <li>🎨 5 акцентних кольорів інтерфейсу замість одного</li>
         <li>🌅 Преміум-фони чату: захід, океан, ліс</li>
         <li>📌 До {PREMIUM_PIN_LIMIT} закріплених чатів (у безкоштовних — {FREE_PIN_LIMIT})</li>
+        <li>😎 Емодзі-статус біля імені й текст статусу</li>
+        <li>🌈 Колір імені та градієнтний банер профілю</li>
+        <li>🎞 Анімована GIF-аватарка</li>
+        <li>💬 Реакції на повідомлення: 14 ексклюзивних і до {PREMIUM_REACTIONS_PER_MESSAGE} на повідомлення (замість {FREE_REACTIONS_PER_MESSAGE})</li>
         <li>🖍 6 ексклюзивних кольорів аватара</li>
         <li>✍️ «Про себе» до {PREMIUM_BIO_LIMIT} символів (замість {FREE_BIO_LIMIT})</li>
       </ul>
