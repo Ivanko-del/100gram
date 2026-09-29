@@ -235,6 +235,13 @@ export async function deleteAccount(currentPassword: string, uid: string, userna
 
 /* ---------------- users ---------------- */
 
+/** Premium lapses when its end date passes - the stored flag is never reset. */
+function isPremiumActive(d: Record<string, unknown>): boolean {
+  if (!d.isPremium) return false;
+  const until = d.premiumUntil;
+  return until instanceof Timestamp ? until.toDate() > new Date() : true;
+}
+
 function mapUser(snap: { id: string; data: () => Record<string, unknown> }): User {
   const d = snap.data();
   return {
@@ -244,7 +251,7 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     bio: (d.bio as string) ?? "",
     avatarColor: d.avatarColor as string,
     avatarUrl: (d.avatarUrl as string) ?? null,
-    isPremium: !!d.isPremium,
+    isPremium: isPremiumActive(d),
     premiumUntil: d.premiumUntil ? tsToIso(d.premiumUntil) : null,
     grams: (d.grams as number) ?? 0,
     mutedGlobally: !!d.mutedGlobally,

@@ -2243,3 +2243,113 @@ textarea {
 .lock-prompt input:focus {
   border-color: var(--accent);
 }
+
+/* ---------- Premium accents & chat backgrounds ---------- */
+[data-accent="blue"] {
+  --accent: #6ab2f2;
+  --accent-strong: #3d8fdb;
+  --bubble-own: #2b5278;
+}
+
+[data-theme="light"][data-accent="blue"] {
+  --accent: #3d8fdb;
+  --bubble-own: #dcebfb;
+}
+
+.accent-swatch.accent-blue { background: #3d8fdb; }
+[data-accent="green"] {
+  --accent: #7ad796;
+  --accent-strong: #2fa84f;
+  --bubble-own: #245c3a;
+}
+
+[data-theme="light"][data-accent="green"] {
+  --accent: #2fa84f;
+  --bubble-own: #d9f2e0;
+}
+
+.accent-swatch.accent-green { background: #2fa84f; }
+[data-accent="orange"] {
+  --accent: #f6b96d;
+  --accent-strong: #e58a2b;
+  --bubble-own: #6b4520;
+}
+
+[data-theme="light"][data-accent="orange"] {
+  --accent: #e58a2b;
+  --bubble-own: #fbe6cc;
+}
+
+.accent-swatch.accent-orange { background: #e58a2b; }
+[data-accent="pink"] {
+  --accent: #f39ac7;
+  --accent-strong: #d6519c;
+  --bubble-own: #6b2a4f;
+}
+
+[data-theme="light"][data-accent="pink"] {
+  --accent: #d6519c;
+  --bubble-own: #fbdcec;
+}
+
+.accent-swatch.accent-pink { background: #d6519c; }
+[data-accent="red"] {
+  --accent: #f29a9a;
+  --accent-strong: #d64c53;
+  --bubble-own: #6b2a2e;
+}
+
+[data-theme="light"][data-accent="red"] {
+  --accent: #d64c53;
+  --bubble-own: #fbdada;
+}
+
+.accent-swatch.accent-red { background: #d64c53; }
+.accent-swatch.accent-purple { background: #7f5fe0; }
+
+.swatch-locked {
+  opacity: 0.55;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-card-locked {
+  opacity: 0.6;
+}
+
+.theme-options-wrap {
+  flex-wrap: wrap;
+}
+
+.theme-options-wrap .theme-card {
+  flex: 1 1 30%;
+}
+
+[data-chat-bg="sunset"] .chat-window {
+  background-image: linear-gradient(160deg, rgba(255, 140, 90, 0.2), rgba(180, 80, 200, 0.16) 60%, transparent);
+}
+
+[data-chat-bg="ocean"] .chat-window {
+  background-image: linear-gradient(160deg, rgba(60, 140, 255, 0.2), rgba(20, 200, 200, 0.14) 60%, transparent);
+}
+
+[data-chat-bg="forest"] .chat-window {
+  background-image: linear-gradient(160deg, rgba(60, 190, 110, 0.18), rgba(20, 90, 70, 0.22) 60%, transparent);
+}
+
+/* active states follow the accent instead of a fixed purple */
+.chat-filter.active,
+.chat-list-item.active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.fab-new-chat,
+.btn-primary {
+  background: var(--accent-strong);
+}
+
+.color-swatches {
+  flex-wrap: wrap;
+}

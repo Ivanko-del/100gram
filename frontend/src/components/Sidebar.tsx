@@ -16,7 +16,7 @@ import LockPrompt from "./LockPrompt";
 import LockSetupModal from "./LockSetupModal";
 import { setChatHidden, setChatLocked } from "../data/chat-lock";
 import { useChatLock } from "../context/ChatLockContext";
-import { SITE_ADMIN_USERNAME, isSiteAdmin } from "../constants";
+import { FREE_PIN_LIMIT, PREMIUM_PIN_LIMIT, SITE_ADMIN_USERNAME, isSiteAdmin } from "../constants";
 import NewChatModal from "./NewChatModal";
 
 interface SidebarProps {
@@ -522,7 +522,19 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
             {!archived.includes(menuChat.id) && (
               <button
                 className="drawer-item"
-                onClick={() => runChatAction(() => setChatPinned(user.id, menuChat.id, !pinned.includes(menuChat.id)))}
+                onClick={() => {
+                  const limit = user.isPremium ? PREMIUM_PIN_LIMIT : FREE_PIN_LIMIT;
+                  if (!pinned.includes(menuChat.id) && pinned.length >= limit) {
+                    setMenuChat(null);
+                    setErrorMsg(
+                      user.isPremium
+                        ? `Можна закріпити не більше ${limit} чатів`
+                        : `Можна закріпити не більше ${limit} чатів. З преміумом — до ${PREMIUM_PIN_LIMIT} ⭐`
+                    );
+                    return;
+                  }
+                  runChatAction(() => setChatPinned(user.id, menuChat.id, !pinned.includes(menuChat.id)));
+                }}
               >
                 <span className="drawer-item-icon">📌</span>
                 {pinned.includes(menuChat.id) ? "Відкріпити" : "Закріпити"}

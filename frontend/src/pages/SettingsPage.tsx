@@ -21,7 +21,14 @@ import { useAxioma } from "../hooks/useAxioma";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import { compressImageToDataUrl } from "../utils/image";
 import { isSoundEnabled, playNotificationSound, setSoundEnabled } from "../utils/sound";
-import { AVATAR_COLORS, PREMIUM_PLANS, SITE_ADMIN_USERNAME, isSiteAdmin } from "../constants";
+import {
+  AVATAR_COLORS,
+  FREE_BIO_LIMIT,
+  FREE_PIN_LIMIT,
+  PREMIUM_AVATAR_COLORS,
+  PREMIUM_BIO_LIMIT,
+  PREMIUM_PIN_LIMIT,
+  PREMIUM_PLANS, SITE_ADMIN_USERNAME, isSiteAdmin } from "../constants";
 import { PremiumPlan, PublicUser, User, WalletTransaction } from "../types";
 import Avatar from "../components/Avatar";
 import AxiomaCard from "../components/AxiomaCard";
@@ -36,7 +43,12 @@ import LockSetupModal from "../components/LockSetupModal";
 import { clearChatLock } from "../data/chat-lock";
 import { useChatLock } from "../context/ChatLockContext";
 import {
+  Accent,
   ChatBackground,
+  PREMIUM_ACCENTS,
+  PREMIUM_BACKGROUNDS,
+  getAccent,
+  setAccent,
   FontSize,
   getChatBackground,
   getFontSize,
@@ -118,7 +130,7 @@ export default function SettingsPage() {
           ← Налаштування
         </button>
         {tab === "profile" && <ProfileTab user={user} />}
-        {tab === "appearance" && <AppearanceTab />}
+        {tab === "appearance" && <AppearanceTab user={user} />}
         {tab === "chats" && <ChatsTab />}
         {tab === "privacy" && <PrivacyTab user={user} />}
         {tab === "wallet" && <WalletTab user={user} />}
@@ -213,7 +225,13 @@ function ProfileTab({ user }: TabProps) {
       </label>
       <label>
         Про себе
-        <textarea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={160} rows={3} />
+        <textarea
+          value={bio}
+          onChange={(e) => setBio(e.target.value)}
+          maxLength={user.isPremium ? PREMIUM_BIO_LIMIT : FREE_BIO_LIMIT}
+          rows={3}
+        />
+        {!user.isPremium && <span className="settings-hint">З преміумом — до {PREMIUM_BIO_LIMIT} символів</span>}
       </label>
       <label>
         Дата народження <span className="settings-hint">(необов'язково)</span>
@@ -230,6 +248,21 @@ function ProfileTab({ user }: TabProps) {
             onClick={() => setAvatarColor(c)}
           />
         ))}
+        {PREMIUM_AVATAR_COLORS.map((c) => {
+          const locked = !user.isPremium && c !== avatarColor;
+          return (
+            <button
+              type="button"
+              key={c}
+              className={`swatch ${avatarColor === c ? "selected" : ""} ${locked ? "swatch-locked" : ""}`}
+              style={{ backgroundColor: c }}
+              title={locked ? "Ексклюзивний колір — потрібен преміум" : undefined}
+              onClick={() => (locked ? setError("Цей колір доступний із преміумом ⭐") : setAvatarColor(c))}
+            >
+              {locked ? "🔒" : ""}
+            </button>
+          );
+        })}
       </div>
       {error && <div className="auth-error">{error}</div>}
       <button className="btn-primary" type="submit" disabled={saving}>
@@ -239,11 +272,13 @@ function ProfileTab({ user }: TabProps) {
   );
 }
 
-function AppearanceTab() {
+function AppearanceTab({ user }: TabProps) {
   const [theme, setTheme] = useState<string>(() => localStorage.getItem("stogram_theme") ?? "dark");
   const [font, setFont] = useState<FontSize>(getFontSize);
   const [bg, setBg] = useState<ChatBackground>(getChatBackground);
   const [compact, setCompact] = useState(isCompactList);
+  const [accent, setAccentState] = useState<Accent>(getAccent);
+  const [premiumHint, setPremiumHint] = useState(false);
   const { installed, canPromptInstall, promptInstall, isIos, isAndroid } = useInstallPrompt();
 
   function applyTheme(next: string) {
@@ -281,23 +316,59 @@ function AppearanceTab() {
         ))}
       </div>
 
+      <h3>Акцентний колір ⭐</h3>
+      <div className="color-swatches">
+        {(["purple", "blue", "green", "orange", "pink", "red"] as Accent[]).map((a) => {
+          const locked = !user.isPremium && PREMIUM_ACCENTS.includes(a);
+          return (
+            <button
+              type="button"
+              key={a}
+              className={`swatch accent-swatch accent-${a} ${accent === a ? "selected" : ""} ${locked ? "swatch-locked" : ""}`}
+              aria-label={a}
+              onClick={() => {
+                if (locked) return setPremiumHint(true);
+                setPremiumHint(false);
+                setAccentState(a);
+                setAccent(a);
+              }}
+            >
+              {locked ? "🔒" : ""}
+            </button>
+          );
+        })}
+      </div>
+
       <h3>Фон чату</h3>
-      <div className="theme-options">
-        {([["aurora", "🌌 Градієнт"], ["dots", "⋯ Візерунок"], ["plain", "▫️ Простий"]] as [ChatBackground, string][]).map(
-          ([id, label]) => (
+      <div className="theme-options theme-options-wrap">
+        {(
+          [
+            ["aurora", "🌌 Градієнт"],
+            ["dots", "⋯ Візерунок"],
+            ["plain", "▫️ Простий"],
+            ["sunset", "🌅 Захід ⭐"],
+            ["ocean", "🌊 Океан ⭐"],
+            ["forest", "🌲 Ліс ⭐"],
+          ] as [ChatBackground, string][]
+        ).map(([id, label]) => {
+          const locked = !user.isPremium && PREMIUM_BACKGROUNDS.includes(id);
+          return (
             <button
               key={id}
-              className={`theme-card ${bg === id ? "selected" : ""}`}
+              className={`theme-card ${bg === id ? "selected" : ""} ${locked ? "theme-card-locked" : ""}`}
               onClick={() => {
+                if (locked) return setPremiumHint(true);
+                setPremiumHint(false);
                 setBg(id);
                 setChatBackground(id);
               }}
             >
               {label}
             </button>
-          )
-        )}
+          );
+        })}
       </div>
+      {premiumHint && <p className="settings-hint">Ці варіанти доступні з преміумом — дивись вкладку «Преміум» ⭐</p>}
 
       <label className="switch-row">
         <span>📋 Компактний список чатів</span>
@@ -793,11 +864,12 @@ function PremiumTab({ user }: TabProps) {
       </div>
 
       <ul className="premium-features">
-        <li>🚀 Швидша доставка повідомлень</li>
-        <li>⭐ Значок преміум біля імені</li>
-        <li>🎨 Ексклюзивні кольори аватара</li>
-        <li>📎 Більший ліміт повідомлень</li>
-        <li>🥃 +10% бонус до подарункових ГРАМів</li>
+        <li>⭐ Золота рамка й зірка на аватарці — тебе видно в кожному чаті</li>
+        <li>🎨 5 акцентних кольорів інтерфейсу замість одного</li>
+        <li>🌅 Преміум-фони чату: захід, океан, ліс</li>
+        <li>📌 До {PREMIUM_PIN_LIMIT} закріплених чатів (у безкоштовних — {FREE_PIN_LIMIT})</li>
+        <li>🖍 6 ексклюзивних кольорів аватара</li>
+        <li>✍️ «Про себе» до {PREMIUM_BIO_LIMIT} символів (замість {FREE_BIO_LIMIT})</li>
       </ul>
 
       {user.isPremium && user.premiumUntil && (

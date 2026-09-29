@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, R
 import type { User as FirebaseAuthUser } from "firebase/auth";
 import { DataError, loginUser, logoutUser, subscribeUser, watchAuth } from "../data/firestore-api";
 import { User } from "../types";
+import { enforceFreeTier } from "../utils/prefs";
 
 interface AuthContextValue {
   user: User | null;
@@ -53,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!uid) return;
     const unsub = subscribeUser(uid, (u) => {
+      if (u && !u.isPremium) enforceFreeTier();
       setUser(u);
       setLoading(false);
     });
