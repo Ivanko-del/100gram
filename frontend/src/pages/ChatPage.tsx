@@ -5,12 +5,15 @@ import { useAuth } from "../context/AuthContext";
 import { playNotificationSound } from "../utils/sound";
 import Sidebar from "../components/Sidebar";
 import ChatWindow from "../components/ChatWindow";
+import LockPrompt from "../components/LockPrompt";
+import { useChatLock } from "../context/ChatLockContext";
 import { ChatSummary, User } from "../types";
 
 export default function ChatPage() {
   const { chatId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { isLocked, hasPassword, unlocked } = useChatLock();
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [profiles, setProfiles] = useState<Record<string, User>>({});
@@ -75,7 +78,11 @@ export default function ChatPage() {
   return (
     <div className={`app-layout ${chatId ? "mobile-show-detail" : ""}`}>
       <Sidebar chats={liveChats} activeChatId={chatId} onChatCreated={handleChatCreated} />
-      {activeChat ? (
+      {activeChat && isLocked(activeChat.id) && hasPassword && !unlocked ? (
+        <div className="chat-window-empty">
+          <LockPrompt title={`«${activeChat.name}» заблоковано`} onCancel={() => navigate("/")} />
+        </div>
+      ) : activeChat ? (
         <ChatWindow chat={activeChat} />
       ) : (
         <div className="chat-window-empty">

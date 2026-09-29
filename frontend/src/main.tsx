@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import { AuthProvider } from "./context/AuthContext";
+import { ChatLockProvider } from "./context/ChatLockContext";
 import { applyPrefs } from "./utils/prefs";
 import "./styles/index.css";
 
@@ -20,7 +21,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
-        <App />
+        <ChatLockProvider>
+          <App />
+        </ChatLockProvider>
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>

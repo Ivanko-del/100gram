@@ -62,6 +62,12 @@ service cloud.firestore {
         || (isSiteAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["badge", "mutedGlobally"]));
       allow delete: if isOwner(uid);
 
+      // Private per-user data (chat lock: password hash + which chats are
+      // locked/hidden). Only the owner can read or write it.
+      match /private/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+
       match /transactions/{txId} {
         allow read: if isOwner(uid);
         // A transfer/premium purchase needs to write into BOTH the sender's

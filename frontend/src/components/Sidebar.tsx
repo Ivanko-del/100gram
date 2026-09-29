@@ -12,6 +12,11 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { ChatSummary, PublicUser } from "../types";
 import Avatar from "./Avatar";
+import LockPrompt from "./LockPrompt";
+import LockSetupModal from "./LockSetupModal";
+import { setChatHidden, setChatLocked } from "../data/chat-lock";
+import { useChatLock } from "../context/ChatLockContext";
+import { SITE_ADMIN_USERNAME, isSiteAdmin } from "../constants";
 import NewChatModal from "./NewChatModal";
 
 interface SidebarProps {
@@ -73,6 +78,10 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
   const [searchOpen, setSearchOpen] = useState(false);
   const [filter, setFilter] = useState<ChatFilter>("all");
   const [showArchive, setShowArchive] = useState(false);
+  const [showVault, setShowVault] = useState(false);
+  const { lock, hasPassword, unlocked, isLocked } = useChatLock();
+  const [setupThen, setSetupThen] = useState<(() => void) | null>(null);
+  const [unlockThen, setUnlockThen] = useState<(() => void) | null>(null);
   const [menuChat, setMenuChat] = useState<ChatSummary | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<ChatSummary | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -84,6 +93,37 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
   useEffect(() => {
     if (searchOpen) searchRef.current?.focus();
   }, [searchOpen]);
+
+  // an action that needed the chat password runs as soon as it is entered
+  useEffect(() => {
+    if (unlocked && unlockThen) {
+      unlockThen();
+      setUnlockThen(null);
+    }
+  }, [unlocked, unlockThen]);
+
+  /** run `action` once the chat password exists (asking to create it first) */
+  function withPassword(action: () => void) {
+    if (hasPassword) action();
+    else setSetupThen(() => action);
+  }
+
+  /** run `action` once the chat password has been entered */
+  function withUnlock(action: () => void) {
+    if (!hasPassword || unlocked) action();
+    else setUnlockThen(() => action);
+  }
+
+  async function openSupport() {
+    if (!user) return;
+    setDrawerOpen(false);
+    try {
+      const chatId = await startDirectChat(user, SITE_ADMIN_USERNAME);
+      navigate(`/chat/${chatId}`);
+    } catch (e) {
+      setErrorMsg(e instanceof DataError ? e.message : "Не вдалося відкрити підтримку");
+    }
+  }
 
   function closeSearch() {
     setSearchOpen(false);
@@ -142,8 +182,10 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
     const at = hidden[c.id];
     return !at || new Date(c.updatedAt).getTime() > new Date(at).getTime();
   });
-  const archivedChats = notHidden.filter((c) => archived.includes(c.id));
-  const activeChats = notHidden.filter((c) => !archived.includes(c.id));
+  const vaultChats = notHidden.filter((c) => lock.hidden.includes(c.id));
+  const listed = notHidden.filter((c) => !lock.hidden.includes(c.id));
+  const archivedChats = listed.filter((c) => archived.includes(c.id));
+  const activeChats = listed.filter((c) => !archived.includes(c.id));
 
   const counts: Record<ChatFilter, number> = {
     all: activeChats.length,
@@ -152,17 +194,17 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
     channel: activeChats.filter((c) => chatKind(c) === "channel").length,
   };
   const searchText = query.trim().toLowerCase();
-  const pool = showArchive ? archivedChats : activeChats;
+  const pool = showVault ? vaultChats : showArchive ? archivedChats : activeChats;
   const filteredChats = pool
-    .filter((c) => (showArchive || filter === "all" || chatKind(c) === filter) && c.name.toLowerCase().includes(searchText))
+    .filter((c) => (showArchive || showVault || filter === "all" || chatKind(c) === filter) && c.name.toLowerCase().includes(searchText))
     .sort((a, b) => Number(pinned.includes(b.id)) - Number(pinned.includes(a.id)));
 
   // Like Telegram: the archive row sits just above the list and is scrolled
   // out of sight, so pulling the list down reveals it.
-  const archiveRowVisible = !showArchive && archivedChats.length > 0 && !searchText;
+  const archiveRowVisible = !showArchive && !showVault && archivedChats.length > 0 && !searchText;
   useEffect(() => {
     if (archiveRowVisible && listRef.current) listRef.current.scrollTop = ARCHIVE_ROW_HEIGHT;
-  }, [archiveRowVisible, showArchive, filter]);
+  }, [archiveRowVisible, showArchive, showVault, filter]);
 
   function pressStart(chat: ChatSummary) {
     longPressed.current = false;
@@ -237,12 +279,19 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
               <CloseIcon />
             </button>
           </>
-        ) : showArchive ? (
+        ) : showArchive || showVault ? (
           <>
-            <button className="header-icon-btn" onClick={() => setShowArchive(false)} aria-label="Назад">
+            <button
+              className="header-icon-btn"
+              onClick={() => {
+                setShowArchive(false);
+                setShowVault(false);
+              }}
+              aria-label="Назад"
+            >
               ←
             </button>
-            <h1 className="sidebar-title">Архів чатів</h1>
+            <h1 className="sidebar-title">{showVault ? "Приховані чати" : "Архів чатів"}</h1>
             <span className="header-icon-spacer" />
           </>
         ) : (
@@ -258,7 +307,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
         )}
       </div>
 
-      {!showArchive && (
+      {!showArchive && !showVault && (
       <div className="chat-filters" role="tablist">
         {FILTERS.map((f) => (
           <button
@@ -316,6 +365,21 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                 <span className="drawer-item-icon">🗄️</span>Архів чатів
                 {archivedChats.length > 0 && <span className="drawer-item-badge">{archivedChats.length}</span>}
               </button>
+              <button
+                className="drawer-item"
+                onClick={() => {
+                  setDrawerOpen(false);
+                  setShowVault(true);
+                }}
+              >
+                <span className="drawer-item-icon">🙈</span>Приховані чати
+                {lock.hidden.length > 0 && <span className="drawer-item-badge">{lock.hidden.length}</span>}
+              </button>
+              {!isSiteAdmin(user?.username) && (
+                <button className="drawer-item" onClick={openSupport}>
+                  <span className="drawer-item-icon">🆘</span>Підтримка
+                </button>
+              )}
               <button className="drawer-item" onClick={() => goSettings("wallet")}>
                 <span className="drawer-item-icon">🥃</span>Гаманець
                 <span className="drawer-item-badge">{user?.grams ?? 0}</span>
@@ -375,12 +439,22 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
               <span className="archive-row-count">{archivedChats.length}</span>
             </button>
           )}
-          {filteredChats.length === 0 && (
+          {showVault && hasPassword && !unlocked && (
+            <LockPrompt
+              title="Приховані чати"
+              onCancel={() => setShowVault(false)}
+            />
+          )}
+          {!(showVault && hasPassword && !unlocked) && filteredChats.length === 0 && (
             <div className="empty-hint">
-              {showArchive ? "Архів порожній" : "Немає чатів. Знайдіть друга через пошук ☝️"}
+              {showVault
+                ? "Немає прихованих чатів. Утримуй чат у списку → «Приховати»."
+                : showArchive
+                  ? "Архів порожній"
+                  : "Немає чатів. Знайдіть друга через пошук ☝️"}
             </div>
           )}
-          {filteredChats.map((chat) => (
+          {!(showVault && hasPassword && !unlocked) && filteredChats.map((chat) => (
             <button
               key={chat.id}
               className={`chat-list-item ${chat.id === activeChatId ? "active" : ""}`}
@@ -404,6 +478,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
               <div className="chat-list-item-body">
                 <div className="chat-list-item-top">
                   <span className="chat-name">
+                    {isLocked(chat.id) ? "🔒 " : ""}
                     {chat.isChannel ? "📢 " : chat.isGroup ? "👥 " : ""}
                     {chat.name}
                   </span>
@@ -412,12 +487,33 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                     {chat.lastMessage && formatTime(chat.lastMessage.createdAt)}
                   </span>
                 </div>
-                <div className="chat-list-item-bottom">{chat.lastMessage?.content ?? "Немає повідомлень"}</div>
+                <div className="chat-list-item-bottom">
+                  {isLocked(chat.id) && !unlocked ? "🔒 Чат заблоковано" : chat.lastMessage?.content ?? "Немає повідомлень"}
+                </div>
               </div>
             </button>
           ))}
         </div>
       </div>
+
+      {setupThen && (
+        <LockSetupModal
+          onClose={() => setSetupThen(null)}
+          onDone={() => {
+            const next = setupThen;
+            setSetupThen(null);
+            next();
+          }}
+        />
+      )}
+
+      {unlockThen && !unlocked && (
+        <div className="modal-overlay" onClick={() => setUnlockThen(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <LockPrompt onCancel={() => setUnlockThen(null)} />
+          </div>
+        </div>
+      )}
 
       {menuChat && user && (
         <div className="modal-overlay" onClick={() => setMenuChat(null)}>
@@ -443,6 +539,33 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
             >
               <span className="drawer-item-icon">🗄️</span>
               {archived.includes(menuChat.id) ? "Повернути з архіву" : "В архів"}
+            </button>
+            <button
+              className="drawer-item"
+              onClick={() => {
+                const c = menuChat;
+                if (isLocked(c.id)) withUnlock(() => runChatAction(() => setChatLocked(user.id, c.id, false)));
+                else withPassword(() => runChatAction(() => setChatLocked(user.id, c.id, true)));
+                setMenuChat(null);
+              }}
+            >
+              <span className="drawer-item-icon">{isLocked(menuChat.id) ? "🔓" : "🔒"}</span>
+              {isLocked(menuChat.id) ? "Зняти блокування" : "Заблокувати паролем"}
+            </button>
+            <button
+              className="drawer-item"
+              onClick={() => {
+                const c = menuChat;
+                if (lock.hidden.includes(c.id)) {
+                  withUnlock(() => runChatAction(() => setChatHidden(user.id, c.id, false)));
+                } else {
+                  withPassword(() => runChatAction(() => setChatHidden(user.id, c.id, true), c.id));
+                }
+                setMenuChat(null);
+              }}
+            >
+              <span className="drawer-item-icon">🙈</span>
+              {lock.hidden.includes(menuChat.id) ? "Показати в списку" : "Приховати"}
             </button>
             <button
               className="drawer-item drawer-item-danger"

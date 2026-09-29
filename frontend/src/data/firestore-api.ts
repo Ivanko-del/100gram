@@ -35,6 +35,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { AVATAR_COLORS, WELCOME_BONUS } from "../constants";
+import { clearChatLock } from "./chat-lock";
 import { ChatMessage, ChatSummary, PremiumPlan, PublicUser, User, UserBadge, WalletTransaction } from "../types";
 
 export class DataError extends Error {}
@@ -216,9 +217,17 @@ export async function changePassword(currentPassword: string, newPassword: strin
  * and messages the account took part in are left in place - removing
  * them everywhere they're referenced is out of scope here - but the
  * username is freed up and the account itself is gone. */
+/** "Forgot the chat password": prove it's you with the account password,
+ * then wipe the chat lock (password + every locked/hidden flag). */
+export async function resetChatLockWithAccountPassword(currentPassword: string, uid: string): Promise<void> {
+  await reauthenticate(currentPassword);
+  await clearChatLock(uid);
+}
+
 export async function deleteAccount(currentPassword: string, uid: string, usernameLower: string, phone?: string | null): Promise<void> {
   await reauthenticate(currentPassword);
   if (phone) await deleteDoc(doc(db, "phones", phone)).catch(() => {});
+  await clearChatLock(uid).catch(() => {});
   await deleteDoc(doc(db, "usernames", usernameLower)).catch(() => {});
   await deleteDoc(doc(db, "users", uid)).catch(() => {});
   await deleteUser(auth.currentUser!);

@@ -7,6 +7,7 @@ import {
   deleteAccount,
   getCurrentEmail,
   grantPremiumFromAxioma,
+  resetChatLockWithAccountPassword,
   setMyPhone,
   searchUsers,
   startDirectChat,
@@ -30,6 +31,10 @@ import type { ConfirmationResult } from "firebase/auth";
 import { auth } from "../firebase";
 import { isPhoneVerified, phoneAuthError, sendLinkCode, unlinkPhone } from "../data/phone-auth";
 import SmsCodeStep from "../components/SmsCodeStep";
+import LockPrompt from "../components/LockPrompt";
+import LockSetupModal from "../components/LockSetupModal";
+import { clearChatLock } from "../data/chat-lock";
+import { useChatLock } from "../context/ChatLockContext";
 import {
   ChatBackground,
   FontSize,
@@ -422,7 +427,122 @@ function PrivacyTab({ user }: TabProps) {
         Дату народження (якщо вказана) бачать усі в твоєму профілі. Увімкни, щоб вона лишалась тільки в тебе.
       </p>
       {error && <div className="auth-error">{error}</div>}
+
+      <ChatLockSettings user={user} />
     </div>
+  );
+}
+
+function ChatLockSettings({ user }: TabProps) {
+  const { hasPassword, unlocked, lock, lockNow } = useChatLock();
+  const [setup, setSetup] = useState(false);
+  const [gate, setGate] = useState<null | "change" | "remove">(null);
+  const [showReset, setShowReset] = useState(false);
+  const [accountPw, setAccountPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  // after the correct password is typed, run the action that was waiting
+  useEffect(() => {
+    if (!gate || !unlocked) return;
+    if (gate === "change") setSetup(true);
+    if (gate === "remove") {
+      setBusy(true);
+      clearChatLock(user.id)
+        .then(() => setNote("Пароль прибрано, усі чати знову видимі"))
+        .catch(() => setError("Не вдалося прибрати пароль"))
+        .finally(() => setBusy(false));
+    }
+    setGate(null);
+  }, [gate, unlocked, user.id]);
+
+  async function reset() {
+    setBusy(true);
+    setError(null);
+    try {
+      await resetChatLockWithAccountPassword(accountPw, user.id);
+      setShowReset(false);
+      setAccountPw("");
+      setNote("Пароль скинуто. Заблоковані й приховані чати знову звичайні");
+    } catch (e) {
+      setError(e instanceof DataError ? e.message : "Не вдалося скинути пароль");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <h3>Пароль на чати</h3>
+      <p className="settings-hint">
+        Заблокований чат відкривається лише за паролем, прихований зникає зі списку й лежить у меню ☰ → «Приховані
+        чати». Утримуй чат у списку, щоб заблокувати чи приховати. Це захист від сторонніх очей у застосунку, а не
+        шифрування повідомлень.
+      </p>
+      <p className="settings-hint">
+        {hasPassword
+          ? `Пароль задано · заблоковано: ${lock.locked.length} · приховано: ${lock.hidden.length}`
+          : "Пароль ще не задано — з'явиться, коли вперше заблокуєш чи приховаєш чат."}
+      </p>
+      {note && <div className="auth-success">{note}</div>}
+      {error && <div className="auth-error">{error}</div>}
+
+      <div className="phone-section-actions">
+        <button
+          type="button"
+          className="btn-ghost"
+          disabled={busy}
+          onClick={() => (hasPassword && !unlocked ? setGate("change") : setSetup(true))}
+        >
+          {hasPassword ? "Змінити пароль" : "Задати пароль"}
+        </button>
+        {hasPassword && (
+          <>
+            <button type="button" className="btn-ghost" disabled={busy} onClick={() => setGate("remove")}>
+              Прибрати пароль
+            </button>
+            {unlocked && (
+              <button type="button" className="btn-ghost" onClick={lockNow}>
+                Заблокувати зараз
+              </button>
+            )}
+            <button type="button" className="btn-ghost" onClick={() => setShowReset((v) => !v)}>
+              Забув пароль
+            </button>
+          </>
+        )}
+      </div>
+
+      {showReset && (
+        <div className="phone-section">
+          <p className="settings-hint">
+            Введи пароль від акаунта, щоб скинути пароль на чати. Усі блокування й приховування буде знято.
+          </p>
+          <input type="password" value={accountPw} onChange={(e) => setAccountPw(e.target.value)} placeholder="Пароль акаунта" />
+          <button type="button" className="btn-primary" disabled={busy || !accountPw} onClick={reset}>
+            Скинути
+          </button>
+        </div>
+      )}
+
+      {gate && !unlocked && (
+        <div className="modal-overlay" onClick={() => setGate(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <LockPrompt onCancel={() => setGate(null)} />
+          </div>
+        </div>
+      )}
+      {setup && (
+        <LockSetupModal
+          onClose={() => setSetup(false)}
+          onDone={() => {
+            setSetup(false);
+            setNote("Пароль збережено");
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -761,6 +881,23 @@ function PhoneSection({ user }: TabProps) {
     }
   }
 
+  // Saving the number without SMS confirmation (it stays "not confirmed")
+  async function saveUnverified() {
+    if (!digits) return setError("Вкажи номер, наприклад +380 67 123 45 67");
+    setError(null);
+    setBusy(true);
+    try {
+      if (auth.currentUser?.phoneNumber && auth.currentUser.phoneNumber !== "+" + digits) await unlinkPhone();
+      await setMyPhone(user.id, user.phone ?? null, digits);
+      setEditing(false);
+      bump((n) => n + 1);
+    } catch (err) {
+      setError(phoneAuthError(err, "Не вдалося зберегти номер"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function remove() {
     if (!window.confirm("Прибрати номер телефону з акаунта? Вхід за SMS перестане працювати.")) return;
     setBusy(true);
@@ -786,12 +923,15 @@ function PhoneSection({ user }: TabProps) {
         <>
           <input type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+380 67 123 45 67" />
           <p className="settings-hint">
-            Надішлемо SMS з кодом, щоб підтвердити номер. Після цього можна входити за номером і тебе знайдуть друзі.
+            Номер можна просто зберегти, а можна підтвердити SMS-кодом — тоді працює вхід за номером.
           </p>
           {error && <div className="auth-error">{error}</div>}
           <div className="phone-section-actions">
-            <button type="button" className="btn-primary" onClick={sendCode} disabled={busy || !digits}>
-              {busy ? "Надсилаємо…" : "Отримати код"}
+            <button type="button" className="btn-primary" onClick={saveUnverified} disabled={busy || !digits}>
+              Зберегти
+            </button>
+            <button type="button" className="btn-ghost" onClick={sendCode} disabled={busy || !digits}>
+              {busy ? "Надсилаємо…" : "Підтвердити SMS"}
             </button>
             {user.phone && (
               <button type="button" className="btn-ghost" onClick={() => { setEditing(false); setPhone(formatPhone(user.phone!)); setError(null); }}>

@@ -153,7 +153,9 @@ export default function Login() {
                 placeholder="+380 67 123 45 67"
               />
             </label>
-            <p className="settings-hint">Ми надішлемо SMS з кодом. Пароль не потрібен.</p>
+            <p className="settings-hint">
+              Ми надішлемо SMS з кодом. Працює лише для підтвердженого номера — якщо SMS не приходять, увійди через Email.
+            </p>
 
             {error && <div className="auth-error">{error}</div>}
 

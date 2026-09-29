@@ -2209,3 +2209,37 @@ textarea {
 .phone-badge.ok {
   color: var(--success);
 }
+
+/* ---------- Chat lock prompt ---------- */
+.lock-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  width: min(320px, 100%);
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.lock-prompt h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.lock-prompt-icon {
+  font-size: 40px;
+}
+
+.lock-prompt input {
+  background: var(--bg-input);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 13px 14px;
+  font-size: 16px;
+  text-align: center;
+  outline: none;
+}
+
+.lock-prompt input:focus {
+  border-color: var(--accent);
+}
