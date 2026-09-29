@@ -5,12 +5,17 @@ import { firebaseConfigured } from "../firebase";
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,24}$/;
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export default function Register() {
   const { register } = useAuth();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -30,9 +35,13 @@ export default function Register() {
       setError("Пароль — мінімум 6 символів");
       return;
     }
+    if (birthDate && (birthDate > todayIso() || birthDate < "1900-01-01")) {
+      setError("Некоректна дата народження");
+      return;
+    }
     setSubmitting(true);
     try {
-      await register(trimmedUsername, email.trim(), password, displayName.trim());
+      await register(trimmedUsername, email.trim(), password, displayName.trim(), birthDate || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка реєстрації");
     } finally {
@@ -62,6 +71,12 @@ export default function Register() {
         <label>
           Email
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="anton@mail.com" />
+        </label>
+        <label>
+          <span>
+            Дата народження <span className="auth-optional">(необов'язково)</span>
+          </span>
+          <input type="date" value={birthDate} min="1900-01-01" max={todayIso()} onChange={(e) => setBirthDate(e.target.value)} />
         </label>
         <label>
           Пароль

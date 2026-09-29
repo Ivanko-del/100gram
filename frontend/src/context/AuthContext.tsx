@@ -9,7 +9,7 @@ interface AuthContextValue {
   loading: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
-  register: (username: string, email: string, password: string, displayName: string) => Promise<void>;
+  register: (username: string, email: string, password: string, displayName: string, birthDate?: string | null) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -70,10 +70,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const register = useCallback(async (username: string, email: string, password: string, displayName: string) => {
+  const register = useCallback(async (username: string, email: string, password: string, displayName: string, birthDate: string | null = null) => {
     setError(null);
     try {
-      await registerUser(username, email, password, displayName);
+      await registerUser(username, email, password, displayName, birthDate);
     } catch (e) {
       setError(errMsg(e, "Помилка реєстрації"));
       throw e;

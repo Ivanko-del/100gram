@@ -68,7 +68,8 @@ export async function registerUser(
   username: string,
   email: string,
   password: string,
-  displayName: string
+  displayName: string,
+  birthDate: string | null = null
 ): Promise<string> {
   const usernameLower = username.trim().toLowerCase();
   const cred = await createUserWithEmailAndPassword(auth, email, password);
@@ -86,6 +87,7 @@ export async function registerUser(
         username,
         usernameLower,
         displayName,
+        birthDate,
         bio: "Привіт! Я користуюсь 100 ГРАМ 🥃",
         avatarColor: randomColor(),
         isPremium: false,
@@ -164,6 +166,7 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     premiumUntil: d.premiumUntil ? tsToIso(d.premiumUntil) : null,
     grams: (d.grams as number) ?? 0,
     mutedGlobally: !!d.mutedGlobally,
+    birthDate: (d.birthDate as string) ?? null,
     badge: (d.badge as UserBadge) ?? null,
     showAdminBadge: !!d.showAdminBadge,
   };
@@ -177,7 +180,7 @@ export function subscribeUser(uid: string, cb: (user: User | null) => void) {
 
 export async function updateProfile(
   uid: string,
-  patch: { displayName?: string; bio?: string; avatarColor?: string; avatarUrl?: string | null; showAdminBadge?: boolean }
+  patch: { displayName?: string; bio?: string; avatarColor?: string; avatarUrl?: string | null; showAdminBadge?: boolean; birthDate?: string | null }
 ) {
   await updateDoc(doc(db, "users", uid), patch);
 }

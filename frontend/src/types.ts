@@ -15,6 +15,8 @@ export interface User {
   premiumUntil?: string | null;
   grams: number;
   mutedGlobally?: boolean;
+  /** Optional, ISO date (YYYY-MM-DD) */
+  birthDate?: string | null;
   badge?: UserBadge | null;
   showAdminBadge?: boolean;
 }

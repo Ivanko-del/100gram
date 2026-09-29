@@ -97,6 +97,7 @@ export default function SettingsPage() {
 function ProfileTab({ user }: TabProps) {
   const [displayName, setDisplayName] = useState(user.displayName);
   const [bio, setBio] = useState(user.bio);
+  const [birthDate, setBirthDate] = useState(user.birthDate ?? "");
   const [avatarColor, setAvatarColor] = useState(user.avatarColor);
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? null);
   const [saving, setSaving] = useState(false);
@@ -111,7 +112,7 @@ function ProfileTab({ user }: TabProps) {
     setError(null);
     setSaved(false);
     try {
-      await updateProfile(user.id, { displayName, bio, avatarColor });
+      await updateProfile(user.id, { displayName, bio, avatarColor, birthDate: birthDate || null });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {
@@ -178,6 +179,10 @@ function ProfileTab({ user }: TabProps) {
       <label>
         Про себе
         <textarea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={160} rows={3} />
+      </label>
+      <label>
+        Дата народження <span className="settings-hint">(необов'язково)</span>
+        <input type="date" value={birthDate} min="1900-01-01" max={new Date().toISOString().slice(0, 10)} onChange={(e) => setBirthDate(e.target.value)} />
       </label>
       <label>Колір аватара {avatarUrl && <span className="settings-hint">(видно, коли немає фото)</span>}</label>
       <div className="color-swatches">
