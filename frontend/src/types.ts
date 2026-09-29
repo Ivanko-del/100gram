@@ -17,6 +17,13 @@ export interface User {
   mutedGlobally?: boolean;
   /** Optional, ISO date (YYYY-MM-DD) */
   birthDate?: string | null;
+  /** Hide the birth date from other users' view of this profile */
+  hideBirthDate?: boolean;
+  /** Per-user chat list prefs ("Telegram-style" pin / archive / delete-for-me) */
+  pinnedChats?: string[];
+  archivedChats?: string[];
+  /** chatId -> ISO time the user removed it; it comes back on a newer message */
+  hiddenChats?: Record<string, string>;
   badge?: UserBadge | null;
   showAdminBadge?: boolean;
 }
@@ -42,6 +49,8 @@ export interface ChatSummary {
   members: PublicUser[];
   adminUids: string[];
   mutedUids: string[];
+  /** The per-user "Saved messages" chat (only member is its owner) */
+  isSaved?: boolean;
   lastMessage: { content: string; createdAt: string; senderId: string } | null;
   updatedAt: string;
 }

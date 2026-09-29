@@ -1,6 +1,7 @@
 import { ChangeEvent, FormEvent, KeyboardEvent, useRef, useState } from "react";
 import { DataError } from "../data/firestore-api";
 import { compressImageToDataUrl } from "../utils/image";
+import { isEnterSends } from "../utils/prefs";
 
 interface Props {
   onSend: (content: string) => void;
@@ -48,7 +49,7 @@ export default function MessageInput({ onSend, onSendImage, onTyping, disabled }
   // that confirms a predictive-text suggestion must not also submit the
   // message, or the text gets cut off mid-composition and comes out garbled.
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && isEnterSends()) {
       e.preventDefault();
       submit(e);
     }

@@ -4,9 +4,11 @@ interface AvatarProps {
   photoUrl?: string | null;
   size?: number;
   isPremium?: boolean;
+  /** Show an emoji instead of initials/photo (e.g. 🔖 for Saved messages) */
+  icon?: string;
 }
 
-export default function Avatar({ name, color, photoUrl, size = 44, isPremium }: AvatarProps) {
+export default function Avatar({ name, color, photoUrl, size = 44, isPremium, icon }: AvatarProps) {
   const initials = name
     .trim()
     .split(/\s+/)
@@ -21,7 +23,11 @@ export default function Avatar({ name, color, photoUrl, size = 44, isPremium }: 
       className={`avatar-wrap ${isPremium ? "avatar-wrap-premium" : ""}`}
       style={{ width: size + ringPad * 2, height: size + ringPad * 2, padding: ringPad }}
     >
-      {photoUrl ? (
+      {icon ? (
+        <div className="avatar" style={{ backgroundColor: color, width: size, height: size, fontSize: size * 0.48 }}>
+          {icon}
+        </div>
+      ) : photoUrl ? (
         <img className="avatar avatar-photo" src={photoUrl} alt={name} style={{ width: size, height: size }} />
       ) : (
         <div className="avatar" style={{ backgroundColor: color, width: size, height: size, fontSize: size * 0.4 }}>

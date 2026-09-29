@@ -167,6 +167,10 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     grams: (d.grams as number) ?? 0,
     mutedGlobally: !!d.mutedGlobally,
     birthDate: (d.birthDate as string) ?? null,
+    hideBirthDate: !!d.hideBirthDate,
+    pinnedChats: (d.pinnedChats as string[]) ?? [],
+    archivedChats: (d.archivedChats as string[]) ?? [],
+    hiddenChats: (d.hiddenChats as Record<string, string>) ?? {},
     badge: (d.badge as UserBadge) ?? null,
     showAdminBadge: !!d.showAdminBadge,
   };
@@ -180,7 +184,7 @@ export function subscribeUser(uid: string, cb: (user: User | null) => void) {
 
 export async function updateProfile(
   uid: string,
-  patch: { displayName?: string; bio?: string; avatarColor?: string; avatarUrl?: string | null; showAdminBadge?: boolean; birthDate?: string | null }
+  patch: { displayName?: string; bio?: string; avatarColor?: string; avatarUrl?: string | null; showAdminBadge?: boolean; birthDate?: string | null; hideBirthDate?: boolean }
 ) {
   await updateDoc(doc(db, "users", uid), patch);
 }
@@ -252,12 +256,15 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
   const isGroup = !!d.isGroup;
   const isChannel = !!d.isChannel;
   const otherUid = memberUids.find((u) => u !== myUid);
-  const name = isGroup
+  const isSaved = !isGroup && snap.id === savedChatId(myUid);
+  const name = isSaved
+    ? "Збережене"
+    : isGroup
     ? (d.name as string) ?? (isChannel ? "Канал" : "Група")
     : otherUid
       ? profiles[otherUid]?.displayName ?? "Чат"
       : "Чат";
-  const avatarColor = isGroup ? (isChannel ? "#3d8fdb" : "#8774e1") : otherUid ? profiles[otherUid]?.avatarColor ?? "#999" : "#999";
+  const avatarColor = isSaved ? "#8b6cf0" : isGroup ? (isChannel ? "#3d8fdb" : "#8774e1") : otherUid ? profiles[otherUid]?.avatarColor ?? "#999" : "#999";
   const avatarUrl = isGroup ? null : otherUid ? profiles[otherUid]?.avatarUrl ?? null : null;
   const lastMessage = d.lastMessage
     ? {
@@ -270,6 +277,7 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
     id: snap.id,
     isGroup,
     isChannel,
+    isSaved,
     name,
     avatarColor,
     avatarUrl,
@@ -287,6 +295,62 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
     lastMessage,
     updatedAt: d.updatedAt ? tsToIso(d.updatedAt) : tsToIso(d.createdAt),
   };
+}
+
+/* ---------------- Saved messages + chat list prefs ---------------- */
+
+export function savedChatId(uid: string): string {
+  return "saved_" + uid;
+}
+
+/** Everyone's private "Saved messages" chat: a chat whose only member is
+ * its owner. Created lazily the first time it is opened. */
+export async function ensureSavedChat(me: User): Promise<string> {
+  const chatId = savedChatId(me.id);
+  const chatRef = doc(db, "chats", chatId);
+  const snap = await getDoc(chatRef);
+  if (!snap.exists()) {
+    await setDoc(chatRef, {
+      isGroup: false,
+      isChannel: false,
+      name: null,
+      memberUids: [me.id],
+      memberProfiles: { [me.id]: toMemberProfile(me) },
+      adminUids: [],
+      lastMessage: null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
+  return chatId;
+}
+
+export async function setChatPinned(uid: string, chatId: string, pinned: boolean): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { pinnedChats: pinned ? arrayUnion(chatId) : arrayRemove(chatId) });
+}
+
+export async function setChatArchived(uid: string, chatId: string, archived: boolean): Promise<void> {
+  await updateDoc(doc(db, "users", uid), {
+    archivedChats: archived ? arrayUnion(chatId) : arrayRemove(chatId),
+    // archiving an already-pinned chat unpins it, like Telegram
+    ...(archived ? { pinnedChats: arrayRemove(chatId) } : {}),
+  });
+}
+
+/** "Delete" a chat for this user only: it disappears from their list until
+ * a newer message arrives. The other members' copy is untouched. */
+export async function hideChatForMe(uid: string, chatId: string): Promise<void> {
+  await updateDoc(doc(db, "users", uid), {
+    [`hiddenChats.${chatId}`]: new Date().toISOString(),
+    pinnedChats: arrayRemove(chatId),
+    archivedChats: arrayRemove(chatId),
+  });
+}
+
+/** Live profile of another user (avatar/name), so chat lists don't rely on
+ * the copy frozen into `memberProfiles` when the chat was created. */
+export function subscribePublicProfile(uid: string, cb: (u: User | null) => void) {
+  return onSnapshot(doc(db, "users", uid), (snap) => cb(snap.exists() ? mapUser(snap) : null));
 }
 
 export function subscribeChats(myUid: string, cb: (chats: ChatSummary[]) => void) {

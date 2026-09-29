@@ -96,7 +96,7 @@ export default function ChatWindow({ chat }: Props) {
   const typingLabel = typingUsers.length > 0 ? `${typingUsers.join(", ")} друкує…` : null;
   const subtitle =
     typingLabel ??
-    (isChannel ? `${chat.members.length} підписників` : isGroup ? `${chat.members.length} учасників` : "в мережі");
+    (chat.isSaved ? "Твої нотатки й файли" : isChannel ? `${chat.members.length} підписників` : isGroup ? `${chat.members.length} учасників` : "в мережі");
   const otherMember = !isGroup ? chat.members.find((m) => m.id !== user?.id) : undefined;
 
   function openHeaderInfo() {
@@ -114,7 +114,7 @@ export default function ChatWindow({ chat }: Props) {
           ←
         </button>
         <button type="button" className="chat-header-info" onClick={openHeaderInfo}>
-          <Avatar name={chat.name} color={chat.avatarColor} photoUrl={chat.avatarUrl} />
+          <Avatar name={chat.name} color={chat.avatarColor} photoUrl={chat.avatarUrl} icon={chat.isSaved ? "🔖" : undefined} />
           <div>
             <div className="chat-window-title">
               {isChannel ? "📢 " : isGroup ? "👥 " : ""}

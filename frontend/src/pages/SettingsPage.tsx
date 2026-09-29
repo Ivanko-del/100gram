@@ -24,8 +24,20 @@ import { PremiumPlan, PublicUser, User, WalletTransaction } from "../types";
 import Avatar from "../components/Avatar";
 import AxiomaCard from "../components/AxiomaCard";
 import UserProfileModal from "../components/UserProfileModal";
+import {
+  ChatBackground,
+  FontSize,
+  getChatBackground,
+  getFontSize,
+  isCompactList,
+  isEnterSends,
+  setChatBackground,
+  setCompactList,
+  setEnterSends,
+  setFontSize,
+} from "../utils/prefs";
 
-type Tab = "profile" | "wallet" | "premium" | "appearance" | "account";
+type Tab = "profile" | "appearance" | "chats" | "privacy" | "wallet" | "premium" | "account";
 
 interface TabProps {
   user: User;
@@ -68,6 +80,13 @@ export default function SettingsPage() {
           <button className={tab === "appearance" ? "active" : ""} onClick={() => openTab("appearance")}>
             🎨 Вигляд
           </button>
+          <button className={tab === "chats" ? "active" : ""} onClick={() => openTab("chats")}>
+            💬 Чати і сповіщення
+          </button>
+          <button className={tab === "privacy" ? "active" : ""} onClick={() => openTab("privacy")}>
+            🛡️ Конфіденційність
+          </button>
+          <div className="settings-nav-divider">Гаманець і підписка</div>
           <button className={tab === "wallet" ? "active" : ""} onClick={() => openTab("wallet")}>
             🥃 Гаманець · {user.grams} ГРАМ
           </button>
@@ -89,6 +108,8 @@ export default function SettingsPage() {
         </button>
         {tab === "profile" && <ProfileTab user={user} />}
         {tab === "appearance" && <AppearanceTab />}
+        {tab === "chats" && <ChatsTab />}
+        {tab === "privacy" && <PrivacyTab user={user} />}
         {tab === "wallet" && <WalletTab user={user} />}
         {tab === "premium" && <PremiumTab user={user} />}
         {tab === "account" && <AccountTab user={user} />}
@@ -209,20 +230,15 @@ function ProfileTab({ user }: TabProps) {
 
 function AppearanceTab() {
   const [theme, setTheme] = useState<string>(() => localStorage.getItem("stogram_theme") ?? "dark");
-  const [soundOn, setSoundOn] = useState(isSoundEnabled);
+  const [font, setFont] = useState<FontSize>(getFontSize);
+  const [bg, setBg] = useState<ChatBackground>(getChatBackground);
+  const [compact, setCompact] = useState(isCompactList);
   const { installed, canPromptInstall, promptInstall, isIos, isAndroid } = useInstallPrompt();
 
   function applyTheme(next: string) {
     setTheme(next);
     localStorage.setItem("stogram_theme", next);
     document.documentElement.dataset.theme = next;
-  }
-
-  function toggleSound() {
-    const next = !soundOn;
-    setSoundOn(next);
-    setSoundEnabled(next);
-    if (next) playNotificationSound();
   }
 
   return (
@@ -238,10 +254,50 @@ function AppearanceTab() {
         </button>
       </div>
 
-      <h3>Сповіщення</h3>
+      <h3>Розмір тексту в чаті</h3>
+      <div className="theme-options">
+        {(["s", "m", "l"] as FontSize[]).map((f) => (
+          <button
+            key={f}
+            className={`theme-card ${font === f ? "selected" : ""}`}
+            onClick={() => {
+              setFont(f);
+              setFontSize(f);
+            }}
+          >
+            <span style={{ fontSize: f === "s" ? 13 : f === "m" ? 16 : 20 }}>Аа</span>
+          </button>
+        ))}
+      </div>
+
+      <h3>Фон чату</h3>
+      <div className="theme-options">
+        {([["aurora", "🌌 Градієнт"], ["dots", "⋯ Візерунок"], ["plain", "▫️ Простий"]] as [ChatBackground, string][]).map(
+          ([id, label]) => (
+            <button
+              key={id}
+              className={`theme-card ${bg === id ? "selected" : ""}`}
+              onClick={() => {
+                setBg(id);
+                setChatBackground(id);
+              }}
+            >
+              {label}
+            </button>
+          )
+        )}
+      </div>
+
       <label className="switch-row">
-        <span>🔔 Звук при новому повідомленні</span>
-        <input type="checkbox" checked={soundOn} onChange={toggleSound} />
+        <span>📋 Компактний список чатів</span>
+        <input
+          type="checkbox"
+          checked={compact}
+          onChange={(e) => {
+            setCompact(e.target.checked);
+            setCompactList(e.target.checked);
+          }}
+        />
       </label>
 
       <h3>Застосунок на телефон і ПК</h3>
@@ -286,10 +342,89 @@ function AppearanceTab() {
   );
 }
 
+function ChatsTab() {
+  const [soundOn, setSoundOn] = useState(isSoundEnabled);
+  const [enterSends, setEnterSendsState] = useState(isEnterSends);
+
+  function toggleSound() {
+    const next = !soundOn;
+    setSoundOn(next);
+    setSoundEnabled(next);
+    if (next) playNotificationSound();
+  }
+
+  return (
+    <div className="settings-panel">
+      <h2>Чати і сповіщення</h2>
+
+      <h3>Сповіщення</h3>
+      <label className="switch-row">
+        <span>🔔 Звук при новому повідомленні</span>
+        <input type="checkbox" checked={soundOn} onChange={toggleSound} />
+      </label>
+
+      <h3>Надсилання</h3>
+      <label className="switch-row">
+        <span>⏎ Enter надсилає повідомлення</span>
+        <input
+          type="checkbox"
+          checked={enterSends}
+          onChange={(e) => {
+            setEnterSendsState(e.target.checked);
+            setEnterSends(e.target.checked);
+          }}
+        />
+      </label>
+      <p className="settings-hint">
+        {enterSends
+          ? "Shift+Enter — новий рядок. Надіслати можна й кнопкою."
+          : "Enter — новий рядок, надсилати треба кнопкою ➤."}
+      </p>
+
+      <h3>Керування чатами</h3>
+      <p className="settings-hint">
+        Утримуй чат у списку (на ПК — права кнопка миші), щоб закріпити його, відправити в архів або видалити. Архів
+        ховається над списком — потягни список вниз, щоб його відкрити. «Збережене» знайдеш у меню ☰.
+      </p>
+    </div>
+  );
+}
+
+function PrivacyTab({ user }: TabProps) {
+  const [hideBirth, setHideBirth] = useState(!!user.hideBirthDate);
+  const [error, setError] = useState<string | null>(null);
+
+  async function toggleBirth(next: boolean) {
+    setHideBirth(next);
+    setError(null);
+    try {
+      await updateProfile(user.id, { hideBirthDate: next });
+    } catch {
+      setHideBirth(!next);
+      setError("Не вдалося зберегти");
+    }
+  }
+
+  return (
+    <div className="settings-panel">
+      <h2>Конфіденційність</h2>
+      <label className="switch-row">
+        <span>🎂 Ховати дату народження від інших</span>
+        <input type="checkbox" checked={hideBirth} onChange={(e) => toggleBirth(e.target.checked)} />
+      </label>
+      <p className="settings-hint">
+        Дату народження (якщо вказана) бачать усі в твоєму профілі. Увімкни, щоб вона лишалась тільки в тебе.
+      </p>
+      {error && <div className="auth-error">{error}</div>}
+    </div>
+  );
+}
+
 const TRANSFER_PRESETS = [10, 50, 100, 250];
 
 function WalletTab({ user }: TabProps) {
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [recipient, setRecipient] = useState<PublicUser | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PublicUser[]>([]);
@@ -441,10 +576,13 @@ function WalletTab({ user }: TabProps) {
 
       <AxiomaCard user={user} />
 
-      <h3>Історія</h3>
+      <button type="button" className="history-toggle" onClick={() => setHistoryOpen((v) => !v)} aria-expanded={historyOpen}>
+        <span>Історія{transactions.length > 0 ? ` · ${transactions.length}` : ""}</span>
+        <span className={`history-chevron ${historyOpen ? "open" : ""}`}>▾</span>
+      </button>
       <div className="tx-list">
-        {transactions.length === 0 && <div className="empty-hint">Ще немає транзакцій</div>}
-        {transactions.map((t) => (
+        {historyOpen && transactions.length === 0 && <div className="empty-hint">Ще немає транзакцій</div>}
+        {(historyOpen ? transactions : []).map((t) => (
           <div key={t.id} className="tx-row">
             <div className="tx-icon">
               {t.type === "premium_purchase" || t.type === "premium_purchase_axioma"

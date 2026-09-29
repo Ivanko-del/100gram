@@ -120,7 +120,7 @@ export default function UserProfileModal({ uid, onClose }: Props) {
             </div>
 
             {profile.bio && <p className="profile-card-bio">{profile.bio}</p>}
-            {profile.birthDate && (
+            {profile.birthDate && (isSelf || !profile.hideBirthDate) && (
               <p className="profile-card-bio">🎂 {new Date(profile.birthDate + "T00:00:00").toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" })}</p>
             )}
 

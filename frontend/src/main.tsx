@@ -4,9 +4,11 @@ import { BrowserRouter } from "react-router-dom";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import { AuthProvider } from "./context/AuthContext";
+import { applyPrefs } from "./utils/prefs";
 import "./styles/index.css";
 
 document.documentElement.dataset.theme = localStorage.getItem("stogram_theme") ?? "dark";
+applyPrefs();
 
 // `immediate: true` checks for a new service worker on load; combined with
 // skipWaiting/clientsClaim (vite.config.ts) the new version takes over and
