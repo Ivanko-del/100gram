@@ -77,7 +77,18 @@ export function phoneAuthError(e: unknown, fallback = "Не вдалося ви�
       return "Цей домен не додано в Firebase → Authentication → Settings → Authorized domains";
     case "auth/network-request-failed":
       return "Немає з'єднання з мережею";
-    default:
-      return fallback;
+    case "auth/invalid-app-credential":
+    case "auth/app-not-authorized":
+    case "auth/missing-app-credential":
+      return "Firebase відхилив запит на SMS (auth/invalid-app-credential). Перевір: план Blaze, регіон SMS у Authentication → Settings → SMS region policy, reCAPTCHA / App Check";
+    case "auth/internal-error":
+      return "Внутрішня помилка Firebase (auth/internal-error) — спробуй ще раз через хвилину";
+    default: {
+      // Show what Firebase actually said - a bare fallback hides the cause.
+      const code = (e as { code?: string })?.code;
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("Phone auth error:", e);
+      return `${fallback} (${code ?? msg})`;
+    }
   }
 }
