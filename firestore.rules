@@ -67,12 +67,12 @@ service cloud.firestore {
         return get(/databases/$(database)/documents/chats/$(chatId)).data;
       }
       function isChatAdmin() {
-        return request.auth.uid in chatData().adminUids;
+        return request.auth.uid in chatData().get('adminUids', []);
       }
       // A channel is a chat with isChannel: true - only its admins may
       // post; a plain group or direct chat lets every member post.
       function canPostIn() {
-        return chatData().isChannel != true || isChatAdmin();
+        return chatData().get('isChannel', false) != true || isChatAdmin();
       }
 
       // `resource == null` covers the "does this chat already exist"
@@ -104,11 +104,11 @@ service cloud.firestore {
       allow delete: if false;
 
       function isChatMuted() {
-        return 'mutedUids' in chatData() && request.auth.uid in chatData().mutedUids;
+        return request.auth.uid in chatData().get('mutedUids', []);
       }
       function isGloballyMuted() {
         return exists(/databases/$(database)/documents/users/$(request.auth.uid))
-          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.mutedGlobally == true;
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('mutedGlobally', false) == true;
       }
 
       match /messages/{messageId} {
