@@ -123,6 +123,16 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
     return () => clearTimeout(handle);
   }, [query, user?.id]);
 
+  // people we already have a private chat with, for the "new chat" quick-pick
+  const contacts: PublicUser[] = chats
+    .filter((c) => !c.isGroup && !c.isSaved)
+    .flatMap((c) => {
+      const peer = c.members.find((m) => m.id !== user?.id);
+      return peer
+        ? [{ ...peer, displayName: c.name, avatarColor: c.avatarColor, avatarUrl: c.avatarUrl ?? null }]
+        : [];
+    });
+
   const pinned = user?.pinnedChats ?? [];
   const archived = user?.archivedChats ?? [];
   const hidden = user?.hiddenChats ?? {};
@@ -326,6 +336,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
 
       {showNewChatModal && (
         <NewChatModal
+          contacts={contacts}
           onClose={() => setShowNewChatModal(false)}
           onCreated={(chatId) => {
             setShowNewChatModal(false);

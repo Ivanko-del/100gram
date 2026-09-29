@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { firebaseConfigured } from "../firebase";
+import { normalizePhone } from "../utils/phone";
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,24}$/;
 
@@ -16,6 +17,7 @@ export default function Register() {
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [birthDate, setBirthDate] = useState("");
+  const [phone, setPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -31,6 +33,11 @@ export default function Register() {
       setError("Вкажи ім'я");
       return;
     }
+    const phoneDigits = normalizePhone(phone);
+    if (!phoneDigits) {
+      setError("Вкажи номер телефону, наприклад +380 67 123 45 67");
+      return;
+    }
     if (password.length < 6) {
       setError("Пароль — мінімум 6 символів");
       return;
@@ -41,7 +48,7 @@ export default function Register() {
     }
     setSubmitting(true);
     try {
-      await register(trimmedUsername, email.trim(), password, displayName.trim(), birthDate || null);
+      await register(trimmedUsername, email.trim(), password, displayName.trim(), birthDate || null, phoneDigits);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка реєстрації");
     } finally {
@@ -67,6 +74,17 @@ export default function Register() {
         <label>
           Username
           <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="anton" />
+        </label>
+        <label>
+          Номер телефону
+          <input
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="+380 67 123 45 67"
+          />
         </label>
         <label>
           Email

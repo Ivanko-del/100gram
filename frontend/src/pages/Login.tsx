@@ -35,14 +35,16 @@ export default function Login() {
         )}
 
         <label>
-          Email
+          Email або номер телефону
           <input
             autoFocus
-            type="email"
+            type="text"
+            inputMode="email"
+            autoCapitalize="none"
             autoComplete="username"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="anton@mail.com"
+            placeholder="anton@mail.com або +380…"
           />
         </label>
         <label>

@@ -35,6 +35,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { AVATAR_COLORS, WELCOME_BONUS } from "../constants";
+import { normalizePhone } from "../utils/phone";
 import { ChatMessage, ChatSummary, PremiumPlan, PublicUser, User, UserBadge, WalletTransaction } from "../types";
 
 export class DataError extends Error {}
@@ -69,9 +70,16 @@ export async function registerUser(
   email: string,
   password: string,
   displayName: string,
-  birthDate: string | null = null
+  birthDate: string | null = null,
+  phone: string | null = null
 ): Promise<string> {
   const usernameLower = username.trim().toLowerCase();
+  if (phone) {
+    // Cheap pre-check so the person hears "number taken" before an auth
+    // account gets created (the transaction below is the real guard).
+    const taken = await getDoc(doc(db, "phones", phone)).then((s) => s.exists()).catch(() => false);
+    if (taken) throw new DataError("Цей номер телефону вже зареєстровано");
+  }
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   const uid = cred.user.uid;
   try {
@@ -79,6 +87,13 @@ export async function registerUser(
       const usernameRef = doc(db, "usernames", usernameLower);
       const usernameSnap = await tx.get(usernameRef);
       if (usernameSnap.exists()) throw new DataError("Це ім'я користувача вже зайняте");
+
+      const phoneRef = phone ? doc(db, "phones", phone) : null;
+      if (phoneRef) {
+        const phoneSnap = await tx.get(phoneRef);
+        if (phoneSnap.exists()) throw new DataError("Цей номер телефону вже зареєстровано");
+        tx.set(phoneRef, { uid, email });
+      }
 
       const userRef = doc(db, "users", uid);
       tx.set(usernameRef, { uid });
@@ -88,6 +103,7 @@ export async function registerUser(
         usernameLower,
         displayName,
         birthDate,
+        phone,
         bio: "Привіт! Я користуюсь 100 ГРАМ 🥃",
         avatarColor: randomColor(),
         isPremium: false,
@@ -113,8 +129,58 @@ export async function registerUser(
   return uid;
 }
 
-export async function loginUser(email: string, password: string): Promise<void> {
+/** Sign in with an email address, or with a phone number that was saved on
+ * the account (looked up to the email Firebase Auth actually uses). */
+export async function loginUser(identifier: string, password: string): Promise<void> {
+  const id = identifier.trim();
+  let email = id;
+  if (!id.includes("@")) {
+    const phone = normalizePhone(id);
+    if (!phone) throw new DataError("Введи email або номер телефону");
+    const snap = await getDoc(doc(db, "phones", phone)).catch(() => null);
+    const found = snap?.exists() ? (snap.data() as { email?: string }).email : undefined;
+    if (!found) throw new DataError("Акаунт із таким номером не знайдено");
+    email = found;
+  }
   await signInWithEmailAndPassword(auth, email, password);
+}
+
+/** Finds a user by phone number (exact match), for the "new chat" search. */
+export async function searchUserByPhone(phone: string, excludeUid: string): Promise<PublicUser | null> {
+  const snap = await getDoc(doc(db, "phones", phone)).catch(() => null);
+  if (!snap?.exists()) return null;
+  const uid = (snap.data() as { uid: string }).uid;
+  if (uid === excludeUid) return null;
+  const u = await getUserProfile(uid);
+  if (!u) return null;
+  return {
+    id: u.id,
+    username: u.username,
+    displayName: u.displayName,
+    bio: u.bio,
+    avatarColor: u.avatarColor,
+    avatarUrl: u.avatarUrl,
+    isPremium: u.isPremium,
+  };
+}
+
+/** Sets, changes or clears the phone on the signed-in account, keeping the
+ * unique `phones/{digits}` reservation in step with it. */
+export async function setMyPhone(uid: string, oldPhone: string | null, newPhone: string | null): Promise<void> {
+  if (oldPhone === newPhone) return;
+  const email = auth.currentUser?.email ?? null;
+  await runTransaction(db, async (tx) => {
+    if (newPhone) {
+      const ref = doc(db, "phones", newPhone);
+      const snap = await tx.get(ref);
+      if (snap.exists() && (snap.data() as { uid: string }).uid !== uid) {
+        throw new DataError("Цей номер телефону вже використовується");
+      }
+      tx.set(ref, { uid, email });
+    }
+    if (oldPhone) tx.delete(doc(db, "phones", oldPhone));
+    tx.update(doc(db, "users", uid), { phone: newPhone });
+  });
 }
 
 export async function logoutUser(): Promise<void> {
@@ -144,8 +210,9 @@ export async function changePassword(currentPassword: string, newPassword: strin
  * and messages the account took part in are left in place - removing
  * them everywhere they're referenced is out of scope here - but the
  * username is freed up and the account itself is gone. */
-export async function deleteAccount(currentPassword: string, uid: string, usernameLower: string): Promise<void> {
+export async function deleteAccount(currentPassword: string, uid: string, usernameLower: string, phone?: string | null): Promise<void> {
   await reauthenticate(currentPassword);
+  if (phone) await deleteDoc(doc(db, "phones", phone)).catch(() => {});
   await deleteDoc(doc(db, "usernames", usernameLower)).catch(() => {});
   await deleteDoc(doc(db, "users", uid)).catch(() => {});
   await deleteUser(auth.currentUser!);
@@ -167,6 +234,7 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     grams: (d.grams as number) ?? 0,
     mutedGlobally: !!d.mutedGlobally,
     birthDate: (d.birthDate as string) ?? null,
+    phone: (d.phone as string) ?? null,
     hideBirthDate: !!d.hideBirthDate,
     pinnedChats: (d.pinnedChats as string[]) ?? [],
     archivedChats: (d.archivedChats as string[]) ?? [],

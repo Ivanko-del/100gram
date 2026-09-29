@@ -7,6 +7,7 @@ import {
   deleteAccount,
   getCurrentEmail,
   grantPremiumFromAxioma,
+  setMyPhone,
   searchUsers,
   startDirectChat,
   subscribeTransactions,
@@ -24,6 +25,7 @@ import { PremiumPlan, PublicUser, User, WalletTransaction } from "../types";
 import Avatar from "../components/Avatar";
 import AxiomaCard from "../components/AxiomaCard";
 import UserProfileModal from "../components/UserProfileModal";
+import { formatPhone, normalizePhone } from "../utils/phone";
 import {
   ChatBackground,
   FontSize,
@@ -122,6 +124,7 @@ function ProfileTab({ user }: TabProps) {
   const [displayName, setDisplayName] = useState(user.displayName);
   const [bio, setBio] = useState(user.bio);
   const [birthDate, setBirthDate] = useState(user.birthDate ?? "");
+  const [phone, setPhone] = useState(user.phone ? formatPhone(user.phone) : "");
   const [avatarColor, setAvatarColor] = useState(user.avatarColor);
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? null);
   const [saving, setSaving] = useState(false);
@@ -136,11 +139,18 @@ function ProfileTab({ user }: TabProps) {
     setError(null);
     setSaved(false);
     try {
+      const phoneDigits = phone.trim() ? normalizePhone(phone) : null;
+      if (phone.trim() && !phoneDigits) {
+        setError("Некоректний номер телефону");
+        setSaving(false);
+        return;
+      }
+      await setMyPhone(user.id, user.phone ?? null, phoneDigits);
       await updateProfile(user.id, { displayName, bio, avatarColor, birthDate: birthDate || null });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch {
-      setError("Не вдалося зберегти");
+    } catch (e2) {
+      setError(e2 instanceof DataError ? e2.message : "Не вдалося зберегти");
     } finally {
       setSaving(false);
     }
@@ -203,6 +213,10 @@ function ProfileTab({ user }: TabProps) {
       <label>
         Про себе
         <textarea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={160} rows={3} />
+      </label>
+      <label>
+        Номер телефону <span className="settings-hint">(для входу й пошуку друзями)</span>
+        <input type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+380 67 123 45 67" />
       </label>
       <label>
         Дата народження <span className="settings-hint">(необов'язково)</span>
@@ -783,7 +797,7 @@ function AccountTab({ user }: TabProps) {
     setDeleteError(null);
     setDeleting(true);
     try {
-      await deleteAccount(deletePassword, user.id, user.username.toLowerCase());
+      await deleteAccount(deletePassword, user.id, user.username.toLowerCase(), user.phone);
       // Firebase Auth signs the user out as part of deleting them; this
       // just clears any local state on our side too.
       await logout().catch(() => {});

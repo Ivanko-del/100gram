@@ -17,6 +17,8 @@ export interface User {
   mutedGlobally?: boolean;
   /** Optional, ISO date (YYYY-MM-DD) */
   birthDate?: string | null;
+  /** Digits only, international format (see utils/phone.ts). Unverified. */
+  phone?: string | null;
   /** Hide the birth date from other users' view of this profile */
   hideBirthDate?: boolean;
   /** Per-user chat list prefs ("Telegram-style" pin / archive / delete-for-me) */
