@@ -43,6 +43,19 @@ body,
   margin: 0;
 }
 
+/* No browser pull-to-refresh / rubber-banding: it fires over the top of
+   the settings tabs and chat lists while scrolling back up. */
+html,
+body {
+  overscroll-behavior-y: none;
+}
+
+.settings-content,
+.sidebar,
+.chat-list {
+  overscroll-behavior-y: contain;
+}
+
 body {
   background: var(--bg-app);
   color: var(--text-primary);
