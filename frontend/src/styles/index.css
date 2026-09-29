@@ -1060,6 +1060,8 @@ textarea {
 }
 
 .settings-content {
+  min-height: 0;
+  align-items: flex-start;
   overflow-y: auto;
   padding: 32px;
   display: flex;
@@ -1067,6 +1069,7 @@ textarea {
 }
 
 .settings-panel {
+  flex-shrink: 0;
   width: 100%;
   max-width: 480px;
   display: flex;
@@ -1669,4 +1672,11 @@ textarea {
   font-size: 11.5px;
   color: var(--text-secondary);
   font-weight: 400;
+}
+
+/* Never let flex columns squash their children when the parent has a
+   bounded height (settings tabs, modals): they scroll instead. */
+.settings-panel > *,
+.modal-card > * {
+  flex-shrink: 0;
 }
