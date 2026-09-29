@@ -55,10 +55,14 @@ export default function ChatWindow({ chat }: Props) {
   }, [chat.id]);
 
   function describeSendError(err: unknown): string {
-    if (err instanceof FirestoreError && err.code === "permission-denied") {
-      return "Немає прав надіслати це тут (можливо, тебе заглушено або це доступно лише адмінам)";
+    if (err instanceof FirestoreError) {
+      if (err.code === "permission-denied") {
+        return "Немає прав надіслати це тут (можливо, тебе заглушено або це доступно лише адмінам)";
+      }
+      return `Не вдалося надіслати (${err.code}): ${err.message}`;
     }
-    return "Не вдалося надіслати. Перевір інтернет і спробуй ще раз";
+    const msg = err instanceof Error ? err.message : String(err);
+    return `Не вдалося надіслати: ${msg}`;
   }
 
   function sendMessage(content: string) {
