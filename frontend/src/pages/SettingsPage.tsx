@@ -23,6 +23,7 @@ import { AVATAR_COLORS, PREMIUM_PLANS, SITE_ADMIN_USERNAME, isSiteAdmin } from "
 import { PremiumPlan, PublicUser, User, WalletTransaction } from "../types";
 import Avatar from "../components/Avatar";
 import AxiomaCard from "../components/AxiomaCard";
+import UserProfileModal from "../components/UserProfileModal";
 
 type Tab = "profile" | "wallet" | "premium" | "appearance" | "account";
 
@@ -35,6 +36,7 @@ export default function SettingsPage() {
   const { user, logout } = useAuth();
   const [tab, setTab] = useState<Tab>("profile");
   const [tabOpened, setTabOpened] = useState(false);
+  const [showOwnProfile, setShowOwnProfile] = useState(false);
 
   if (!user) return null;
 
@@ -49,12 +51,13 @@ export default function SettingsPage() {
         <button className="icon-btn back-btn" onClick={() => navigate("/")}>
           ← Назад до чатів
         </button>
-        <div className="settings-profile-preview">
+        <button type="button" className="settings-profile-preview" onClick={() => setShowOwnProfile(true)}>
           <Avatar name={user.displayName} color={user.avatarColor} photoUrl={user.avatarUrl} size={72} isPremium={user.isPremium} />
           <div className="settings-profile-name">{user.displayName}</div>
           <div className="settings-profile-username">@{user.username}</div>
           {user.isPremium && <div className="premium-chip">⭐ Преміум активний</div>}
-        </div>
+        </button>
+        {showOwnProfile && <UserProfileModal uid={user.id} onClose={() => setShowOwnProfile(false)} />}
         <nav>
           <button className={tab === "profile" ? "active" : ""} onClick={() => openTab("profile")}>
             👤 Профіль

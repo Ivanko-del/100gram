@@ -961,6 +961,12 @@ textarea {
   align-items: center;
   gap: 6px;
   padding: 12px 0;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
 }
 
 .settings-profile-name {

@@ -127,7 +127,7 @@ export default function UserProfileModal({ uid, onClose }: Props) {
               </button>
             )}
 
-            {viewerIsSiteAdmin && !isSelf && (
+            {viewerIsSiteAdmin && (
               <div className="admin-controls">
                 <h3>Керування (адмін)</h3>
                 <button type="button" className="btn-ghost" disabled={mutingGlobal} onClick={toggleGlobalMute}>
