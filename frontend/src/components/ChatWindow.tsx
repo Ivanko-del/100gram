@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { FirestoreError } from "firebase/firestore";
 import { deleteMessage, sendMessage as sendMessageApi, setTyping, subscribeMessages, subscribeTyping } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
 import { isSiteAdmin } from "../constants";
@@ -22,11 +23,13 @@ export default function ChatWindow({ chat }: Props) {
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [showMembers, setShowMembers] = useState(false);
   const [profileUid, setProfileUid] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setLoading(true);
     setMessages([]);
+    setSendError(null);
     const unsub = subscribeMessages(chat.id, (msgs) => {
       setMessages(msgs);
       setLoading(false);
@@ -51,14 +54,23 @@ export default function ChatWindow({ chat }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.id]);
 
+  function describeSendError(err: unknown): string {
+    if (err instanceof FirestoreError && err.code === "permission-denied") {
+      return "Немає прав надіслати це тут (можливо, тебе заглушено або це доступно лише адмінам)";
+    }
+    return "Не вдалося надіслати. Перевір інтернет і спробуй ще раз";
+  }
+
   function sendMessage(content: string) {
     if (!user) return;
-    sendMessageApi(chat.id, user, content, "text").catch(() => {});
+    setSendError(null);
+    sendMessageApi(chat.id, user, content, "text").catch((err) => setSendError(describeSendError(err)));
   }
 
   function sendImage(url: string) {
     if (!user) return;
-    sendMessageApi(chat.id, user, url, "image").catch(() => {});
+    setSendError(null);
+    sendMessageApi(chat.id, user, url, "image").catch((err) => setSendError(describeSendError(err)));
   }
 
   function handleTyping(isTyping: boolean) {
@@ -67,7 +79,7 @@ export default function ChatWindow({ chat }: Props) {
   }
 
   function handleDelete(messageId: string) {
-    deleteMessage(chat.id, messageId).catch(() => {});
+    deleteMessage(chat.id, messageId).catch((err) => setSendError(describeSendError(err)));
   }
 
   const isGroup = chat.isGroup;
@@ -144,6 +156,8 @@ export default function ChatWindow({ chat }: Props) {
         })}
         <div ref={bottomRef} />
       </div>
+
+      {sendError && <div className="auth-error chat-send-error">{sendError}</div>}
 
       {canPost ? (
         <MessageInput onSend={sendMessage} onSendImage={sendImage} onTyping={handleTyping} disabled={!user} />

@@ -135,6 +135,10 @@ textarea {
   font-size: 13px;
 }
 
+.chat-send-error {
+  margin: 0 20px 8px;
+}
+
 .auth-success {
   background: rgba(84, 203, 104, 0.15);
   color: var(--success);

@@ -14,6 +14,7 @@ service cloud.firestore {
     // grant themselves this by writing a field from devtools.
     function isSiteAdmin() {
       return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.usernameLower == "theivankoo";
     }
 
@@ -106,7 +107,8 @@ service cloud.firestore {
         return 'mutedUids' in chatData() && request.auth.uid in chatData().mutedUids;
       }
       function isGloballyMuted() {
-        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.mutedGlobally == true;
+        return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.mutedGlobally == true;
       }
 
       match /messages/{messageId} {
