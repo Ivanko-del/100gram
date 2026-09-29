@@ -28,12 +28,12 @@ service cloud.firestore {
       allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
 
-    // phone (digits) -> { uid, email }. Lets a person sign in with a phone
-    // number and lets others find them by it. `get` is open to everyone
-    // (sign-in happens before there is an auth session) but listing is not,
-    // so a number must already be known to look it up.
+    // phone (digits) -> { uid }. The number is SMS-verified through Firebase
+    // Phone Auth before it lands here. Lets others find a person by their
+    // exact number and keeps numbers unique. Signed-in users only, and only
+    // single lookups - the collection cannot be listed.
     match /phones/{phone} {
-      allow get: if true;
+      allow get: if isSignedIn();
       allow list: if false;
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
       allow update: if false;

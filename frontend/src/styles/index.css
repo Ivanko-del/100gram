@@ -2147,3 +2147,65 @@ textarea {
 .newchat-form input:focus {
   border-color: var(--accent);
 }
+
+/* ---------- Phone / SMS ---------- */
+.auth-form,
+.sms-step {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sms-code-input {
+  text-align: center;
+  font-size: 26px !important;
+  letter-spacing: 0.5em;
+  padding-left: 0.5em !important;
+}
+
+.sms-actions,
+.phone-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.phone-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.phone-section-title {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.phone-section input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 16px;
+  outline: none;
+}
+
+.phone-current {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.phone-badge {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--danger);
+}
+
+.phone-badge.ok {
+  color: var(--success);
+}

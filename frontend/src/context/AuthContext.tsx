@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import type { User as FirebaseAuthUser } from "firebase/auth";
-import { DataError, loginUser, logoutUser, registerUser, subscribeUser, watchAuth } from "../data/firestore-api";
+import { DataError, loginUser, logoutUser, subscribeUser, watchAuth } from "../data/firestore-api";
 import { User } from "../types";
 
 interface AuthContextValue {
@@ -9,7 +9,6 @@ interface AuthContextValue {
   loading: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
-  register: (username: string, email: string, password: string, displayName: string, birthDate?: string | null, phone?: string | null) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -70,23 +69,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const register = useCallback(async (username: string, email: string, password: string, displayName: string, birthDate: string | null = null, phone: string | null = null) => {
-    setError(null);
-    try {
-      await registerUser(username, email, password, displayName, birthDate, phone);
-    } catch (e) {
-      setError(errMsg(e, "Помилка реєстрації"));
-      throw e;
-    }
-  }, []);
-
   const logout = useCallback(async () => {
     await logoutUser();
   }, []);
 
   const value = useMemo(
-    () => ({ user, uid, loading, error, login, register, logout }),
-    [user, uid, loading, error, login, register, logout]
+    () => ({ user, uid, loading, error, login, logout }),
+    [user, uid, loading, error, login, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

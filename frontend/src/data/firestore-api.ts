@@ -35,7 +35,6 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { AVATAR_COLORS, WELCOME_BONUS } from "../constants";
-import { normalizePhone } from "../utils/phone";
 import { ChatMessage, ChatSummary, PremiumPlan, PublicUser, User, UserBadge, WalletTransaction } from "../types";
 
 export class DataError extends Error {}
@@ -65,38 +64,46 @@ export function getCurrentEmail(): string | null {
   return auth.currentUser?.email ?? null;
 }
 
-export async function registerUser(
-  username: string,
-  email: string,
-  password: string,
-  displayName: string,
-  birthDate: string | null = null,
-  phone: string | null = null
-): Promise<string> {
-  const usernameLower = username.trim().toLowerCase();
-  if (phone) {
-    // Cheap pre-check so the person hears "number taken" before an auth
-    // account gets created (the transaction below is the real guard).
-    const taken = await getDoc(doc(db, "phones", phone)).then((s) => s.exists()).catch(() => false);
-    if (taken) throw new DataError("Цей номер телефону вже зареєстровано");
+/** Step 1 of sign-up: the email/password account. The profile document is
+ * only written by `finishRegistration`, after the phone is SMS-verified. */
+export async function createAuthAccount(email: string, password: string): Promise<void> {
+  await createUserWithEmailAndPassword(auth, email, password);
+}
+
+/** Drops a half-finished sign-up (auth account without a profile). */
+export async function discardUnfinishedAccount(): Promise<void> {
+  const fbUser = auth.currentUser;
+  if (!fbUser) return;
+  try {
+    await deleteUser(fbUser);
+  } catch {
+    await signOut(auth).catch(() => {});
   }
-  const cred = await createUserWithEmailAndPassword(auth, email, password);
-  const uid = cred.user.uid;
+}
+
+/** Step 2 of sign-up, once the phone is verified and linked: reserves the
+ * username + phone and creates the profile in one transaction. */
+export async function finishRegistration(
+  username: string,
+  displayName: string,
+  birthDate: string | null,
+  phone: string
+): Promise<string> {
+  const fbUser = auth.currentUser;
+  if (!fbUser) throw new DataError("Сесію реєстрації втрачено — почни спочатку");
+  const uid = fbUser.uid;
+  const usernameLower = username.trim().toLowerCase();
   try {
     await runTransaction(db, async (tx) => {
       const usernameRef = doc(db, "usernames", usernameLower);
-      const usernameSnap = await tx.get(usernameRef);
-      if (usernameSnap.exists()) throw new DataError("Це ім'я користувача вже зайняте");
+      if ((await tx.get(usernameRef)).exists()) throw new DataError("Це ім'я користувача вже зайняте");
 
-      const phoneRef = phone ? doc(db, "phones", phone) : null;
-      if (phoneRef) {
-        const phoneSnap = await tx.get(phoneRef);
-        if (phoneSnap.exists()) throw new DataError("Цей номер телефону вже зареєстровано");
-        tx.set(phoneRef, { uid, email });
-      }
+      const phoneRef = doc(db, "phones", phone);
+      if ((await tx.get(phoneRef)).exists()) throw new DataError("Цей номер телефону вже зареєстровано");
 
       const userRef = doc(db, "users", uid);
       tx.set(usernameRef, { uid });
+      tx.set(phoneRef, { uid });
       tx.set(userRef, {
         uid,
         username,
@@ -122,27 +129,27 @@ export async function registerUser(
       });
     });
   } catch (err) {
-    await cred.user.delete().catch(() => {});
+    await deleteUser(fbUser).catch(() => signOut(auth).catch(() => {}));
     if (err instanceof DataError) throw err;
     throw new DataError("Не вдалося завершити реєстрацію");
   }
   return uid;
 }
 
-/** Sign in with an email address, or with a phone number that was saved on
- * the account (looked up to the email Firebase Auth actually uses). */
-export async function loginUser(identifier: string, password: string): Promise<void> {
-  const id = identifier.trim();
-  let email = id;
-  if (!id.includes("@")) {
-    const phone = normalizePhone(id);
-    if (!phone) throw new DataError("Введи email або номер телефону");
-    const snap = await getDoc(doc(db, "phones", phone)).catch(() => null);
-    const found = snap?.exists() ? (snap.data() as { email?: string }).email : undefined;
-    if (!found) throw new DataError("Акаунт із таким номером не знайдено");
-    email = found;
+export async function loginUser(email: string, password: string): Promise<void> {
+  await signInWithEmailAndPassword(auth, email.trim(), password);
+}
+
+/** After a phone sign-in: a number that was never registered makes Firebase
+ * create a bare account with no profile - remove it and say so. */
+export async function requireProfileAfterPhoneLogin(): Promise<void> {
+  const fbUser = auth.currentUser;
+  if (!fbUser) return;
+  const has = await getDoc(doc(db, "users", fbUser.uid)).then((s) => s.exists()).catch(() => false);
+  if (!has) {
+    await deleteUser(fbUser).catch(() => signOut(auth).catch(() => {}));
+    throw new DataError("Акаунта з таким номером немає. Спочатку зареєструйся.");
   }
-  await signInWithEmailAndPassword(auth, email, password);
 }
 
 /** Finds a user by phone number (exact match), for the "new chat" search. */
@@ -168,7 +175,6 @@ export async function searchUserByPhone(phone: string, excludeUid: string): Prom
  * unique `phones/{digits}` reservation in step with it. */
 export async function setMyPhone(uid: string, oldPhone: string | null, newPhone: string | null): Promise<void> {
   if (oldPhone === newPhone) return;
-  const email = auth.currentUser?.email ?? null;
   await runTransaction(db, async (tx) => {
     if (newPhone) {
       const ref = doc(db, "phones", newPhone);
@@ -176,7 +182,7 @@ export async function setMyPhone(uid: string, oldPhone: string | null, newPhone:
       if (snap.exists() && (snap.data() as { uid: string }).uid !== uid) {
         throw new DataError("Цей номер телефону вже використовується");
       }
-      tx.set(ref, { uid, email });
+      tx.set(ref, { uid });
     }
     if (oldPhone) tx.delete(doc(db, "phones", oldPhone));
     tx.update(doc(db, "users", uid), { phone: newPhone });

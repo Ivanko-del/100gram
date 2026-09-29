@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   DataError,
@@ -26,6 +26,10 @@ import Avatar from "../components/Avatar";
 import AxiomaCard from "../components/AxiomaCard";
 import UserProfileModal from "../components/UserProfileModal";
 import { formatPhone, normalizePhone } from "../utils/phone";
+import type { ConfirmationResult } from "firebase/auth";
+import { auth } from "../firebase";
+import { isPhoneVerified, phoneAuthError, sendLinkCode, unlinkPhone } from "../data/phone-auth";
+import SmsCodeStep from "../components/SmsCodeStep";
 import {
   ChatBackground,
   FontSize,
@@ -124,7 +128,6 @@ function ProfileTab({ user }: TabProps) {
   const [displayName, setDisplayName] = useState(user.displayName);
   const [bio, setBio] = useState(user.bio);
   const [birthDate, setBirthDate] = useState(user.birthDate ?? "");
-  const [phone, setPhone] = useState(user.phone ? formatPhone(user.phone) : "");
   const [avatarColor, setAvatarColor] = useState(user.avatarColor);
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? null);
   const [saving, setSaving] = useState(false);
@@ -139,13 +142,6 @@ function ProfileTab({ user }: TabProps) {
     setError(null);
     setSaved(false);
     try {
-      const phoneDigits = phone.trim() ? normalizePhone(phone) : null;
-      if (phone.trim() && !phoneDigits) {
-        setError("Некоректний номер телефону");
-        setSaving(false);
-        return;
-      }
-      await setMyPhone(user.id, user.phone ?? null, phoneDigits);
       await updateProfile(user.id, { displayName, bio, avatarColor, birthDate: birthDate || null });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -213,10 +209,6 @@ function ProfileTab({ user }: TabProps) {
       <label>
         Про себе
         <textarea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={160} rows={3} />
-      </label>
-      <label>
-        Номер телефону <span className="settings-hint">(для входу й пошуку друзями)</span>
-        <input type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+380 67 123 45 67" />
       </label>
       <label>
         Дата народження <span className="settings-hint">(необов'язково)</span>
@@ -723,6 +715,118 @@ function PremiumTab({ user }: TabProps) {
   );
 }
 
+function PhoneSection({ user }: TabProps) {
+  const [phone, setPhone] = useState(user.phone ? formatPhone(user.phone) : "");
+  const [step, setStep] = useState<"idle" | "code">("idle");
+  const [editing, setEditing] = useState(!user.phone);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [, bump] = useState(0);
+  const confirmation = useRef<ConfirmationResult | null>(null);
+  const recaptchaRef = useRef<HTMLDivElement>(null);
+
+  const digits = normalizePhone(phone);
+  const verified = isPhoneVerified(user.phone);
+
+  async function sendCode() {
+    if (!digits) return setError("Вкажи номер, наприклад +380 67 123 45 67");
+    setError(null);
+    setBusy(true);
+    try {
+      // one verified number per account: detach the old one first
+      if (auth.currentUser?.phoneNumber && auth.currentUser.phoneNumber !== "+" + digits) await unlinkPhone();
+      confirmation.current = await sendLinkCode(digits, recaptchaRef.current!);
+      setStep("code");
+    } catch (err) {
+      setError(phoneAuthError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCode(code: string) {
+    if (!confirmation.current || !digits) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await confirmation.current.confirm(code);
+      await setMyPhone(user.id, user.phone ?? null, digits);
+      setStep("idle");
+      setEditing(false);
+      bump((n) => n + 1);
+    } catch (err) {
+      setError(phoneAuthError(err, "Невірний код"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!window.confirm("Прибрати номер телефону з акаунта? Вхід за SMS перестане працювати.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await unlinkPhone();
+      await setMyPhone(user.id, user.phone ?? null, null);
+      setPhone("");
+      setEditing(true);
+    } catch (err) {
+      setError(phoneAuthError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="phone-section">
+      <div className="phone-section-title">Номер телефону</div>
+      {step === "code" && digits ? (
+        <SmsCodeStep phone={digits} busy={busy} error={error} onSubmit={onCode} onResend={sendCode} onBack={() => setStep("idle")} />
+      ) : editing ? (
+        <>
+          <input type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+380 67 123 45 67" />
+          <p className="settings-hint">
+            Надішлемо SMS з кодом, щоб підтвердити номер. Після цього можна входити за номером і тебе знайдуть друзі.
+          </p>
+          {error && <div className="auth-error">{error}</div>}
+          <div className="phone-section-actions">
+            <button type="button" className="btn-primary" onClick={sendCode} disabled={busy || !digits}>
+              {busy ? "Надсилаємо…" : "Отримати код"}
+            </button>
+            {user.phone && (
+              <button type="button" className="btn-ghost" onClick={() => { setEditing(false); setPhone(formatPhone(user.phone!)); setError(null); }}>
+                Скасувати
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="phone-current">
+            {user.phone ? formatPhone(user.phone) : "—"}{" "}
+            <span className={verified ? "phone-badge ok" : "phone-badge"}>{verified ? "✓ підтверджено" : "не підтверджено"}</span>
+          </div>
+          {error && <div className="auth-error">{error}</div>}
+          <div className="phone-section-actions">
+            {!verified && (
+              <button type="button" className="btn-primary" onClick={sendCode} disabled={busy}>
+                Підтвердити
+              </button>
+            )}
+            <button type="button" className="btn-ghost" onClick={() => setEditing(true)} disabled={busy}>
+              Змінити
+            </button>
+            <button type="button" className="btn-ghost" onClick={remove} disabled={busy}>
+              Прибрати
+            </button>
+          </div>
+        </>
+      )}
+      <div ref={recaptchaRef} />
+    </div>
+  );
+}
+
 function AccountTab({ user }: TabProps) {
   const { logout } = useAuth();
   const navigate = useNavigate();
@@ -815,6 +919,8 @@ function AccountTab({ user }: TabProps) {
         Email
         <input value={email ?? ""} disabled />
       </label>
+
+      <PhoneSection user={user} />
 
       {!isMeSiteAdmin && (
         <div>
