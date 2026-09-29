@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   DataError,
   buyPremium,
@@ -33,9 +33,12 @@ interface TabProps {
 
 export default function SettingsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useAuth();
-  const [tab, setTab] = useState<Tab>("profile");
-  const [tabOpened, setTabOpened] = useState(false);
+  // The chat-list drawer can deep-link straight into a tab (wallet, premium)
+  const initialTab = (location.state as { tab?: Tab } | null)?.tab;
+  const [tab, setTab] = useState<Tab>(initialTab ?? "profile");
+  const [tabOpened, setTabOpened] = useState(!!initialTab);
   const [showOwnProfile, setShowOwnProfile] = useState(false);
 
   if (!user) return null;
