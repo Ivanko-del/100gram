@@ -2772,3 +2772,35 @@ textarea {
 .header-spacer {
   flex: 1;
 }
+
+/* ---------- Group info ---------- */
+.chat-info-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.chat-description {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-description-input {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  color: inherit;
+  font-size: 14px;
+  resize: vertical;
+  margin: 8px 0;
+}
+
+.leave-chat-btn {
+  margin-top: 8px;
+  color: var(--danger);
+}

@@ -67,6 +67,8 @@ export interface ChatSummary {
   mutedUids: string[];
   /** The per-user "Saved messages" chat (only member is its owner) */
   isSaved?: boolean;
+  /** Groups/channels: text shown in the members panel */
+  description?: string | null;
   /** Direct chats: the other person's last-seen time (null when hidden/unknown) */
   peerLastSeenAt?: string | null;
   peerId?: string | null;

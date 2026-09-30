@@ -49,6 +49,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
   const [forwardMsg, setForwardMsg] = useState<ChatMessage | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const loadingOlder = useRef(false);
+  const sentAt = useRef<number[]>([]);
 
   // a different chat: start from a clean slate
   useEffect(() => {
@@ -121,8 +122,20 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
     return code ? `Не вдалося надіслати (${code}): ${msg}` : `Не вдалося надіслати: ${msg}`;
   }
 
+  // crude anti-flood: at most 8 messages per 10 seconds
+  function tooFast(): boolean {
+    const now = Date.now();
+    sentAt.current = sentAt.current.filter((t) => now - t < 10_000);
+    if (sentAt.current.length >= 8) {
+      setSendError("Не так швидко — зачекай кілька секунд");
+      return true;
+    }
+    sentAt.current.push(now);
+    return false;
+  }
+
   function sendMessage(content: string) {
-    if (!user) return;
+    if (!user || tooFast()) return;
     setSendError(null);
     const reply = replyTo
       ? {
@@ -169,7 +182,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
   }
 
   function sendImage(url: string) {
-    if (!user) return;
+    if (!user || tooFast()) return;
     setSendError(null);
     sendMessageApi(chat.id, user, url, "image").catch((err) => setSendError(describeSendError(err)));
   }
@@ -260,6 +273,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
         <MembersListModal
           chat={chat}
           onClose={() => setShowMembers(false)}
+          onLeft={() => navigate("/")}
           onSelectMember={(uid) => {
             setShowMembers(false);
             setProfileUid(uid);

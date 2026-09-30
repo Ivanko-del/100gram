@@ -366,7 +366,7 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
       ? profiles[otherUid]?.displayName ?? "Чат"
       : "Чат";
   const avatarColor = isSaved ? "#8b6cf0" : isGroup ? (isChannel ? "#3d8fdb" : "#8774e1") : otherUid ? profiles[otherUid]?.avatarColor ?? "#999" : "#999";
-  const avatarUrl = isGroup ? null : otherUid ? profiles[otherUid]?.avatarUrl ?? null : null;
+  const avatarUrl = isGroup ? (d.avatarUrl as string) ?? null : otherUid ? profiles[otherUid]?.avatarUrl ?? null : null;
   const lastMessage = d.lastMessage
     ? {
         content: (d.lastMessage as any).content,
@@ -379,6 +379,7 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
     isGroup,
     isChannel,
     isSaved,
+    description: (d.description as string) ?? null,
     name,
     avatarColor,
     avatarUrl,
@@ -625,6 +626,19 @@ export async function setChatAdmin(chatId: string, uid: string, makeAdmin: boole
 }
 
 /** Admin-only: renames a group/channel. */
+/** Admin-only: the group/channel photo and description. */
+export async function updateChatInfo(
+  chatId: string,
+  patch: { description?: string | null; avatarUrl?: string | null }
+): Promise<void> {
+  await updateDoc(doc(db, "chats", chatId), patch);
+}
+
+/** Leave a group or channel yourself (rules allow removing only your own uid). */
+export async function leaveChat(chatId: string, uid: string): Promise<void> {
+  await removeChatMember(chatId, uid);
+}
+
 export async function renameChat(chatId: string, name: string): Promise<void> {
   const trimmed = name.trim();
   if (!trimmed) throw new DataError("Вкажи назву");

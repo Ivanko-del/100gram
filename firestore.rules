@@ -28,10 +28,10 @@ service cloud.firestore {
       allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
 
-    // phone (digits) -> { uid }. The number is SMS-verified through Firebase
-    // Phone Auth before it lands here. Lets others find a person by their
-    // exact number and keeps numbers unique. Signed-in users only, and only
-    // single lookups - the collection cannot be listed.
+    // phone (digits) -> { uid }. Lets others find a person by their exact
+    // number and keeps numbers unique (the number may or may not be
+    // SMS-verified). Signed-in users only, and only single lookups - the
+    // collection cannot be listed.
     match /phones/{phone} {
       allow get: if isSignedIn();
       allow list: if false;
@@ -114,6 +114,12 @@ service cloud.firestore {
         return !request.resource.data.diff(resource.data).affectedKeys().hasAny(["readBy"])
           || request.resource.data.readBy.diff(resource.data.get('readBy', {})).affectedKeys().hasOnly([request.auth.uid]);
       }
+      // Leaving yourself: your uid disappears from memberUids/adminUids and
+      // nothing else about the member list changes.
+      function isSelfLeave() {
+        return request.resource.data.memberUids.toSet() == resource.data.memberUids.toSet().difference([request.auth.uid].toSet())
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["memberUids", "adminUids", "memberProfiles"]);
+      }
       allow update: if isSignedIn() && request.auth.uid in resource.data.memberUids
         && (
           // any member may bump the "last message" preview when sending and
@@ -123,6 +129,8 @@ service cloud.firestore {
           // any member may invite more people into a plain group; channels
           // need admin rights even just to invite
           || (resource.data.isChannel != true && isMemberAddition())
+          // any member may leave a group/channel on their own
+          || isSelfLeave()
           // kicking someone, promoting/demoting, renaming, ... needs admin
           // rights on both groups and channels
           || request.auth.uid in resource.data.adminUids
