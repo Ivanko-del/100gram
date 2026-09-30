@@ -6,7 +6,9 @@ import {
   changePassword,
   deleteAccount,
   getCurrentEmail,
+  getUserProfile,
   grantPremiumFromAxioma,
+  setUserBlocked,
   resetChatLockWithAccountPassword,
   setMyPhone,
   searchUsers,
@@ -612,10 +614,57 @@ function PrivacyTab({ user }: TabProps) {
       <p className="settings-hint">
         Дату народження (якщо вказана) бачать усі в твоєму профілі. Увімкни, щоб вона лишалась тільки в тебе.
       </p>
+      <label className="switch-row">
+        <span>🕒 Ховати, коли я був(ла) в мережі</span>
+        <input
+          type="checkbox"
+          checked={!!user.hideLastSeen}
+          onChange={(e) => updateProfile(user.id, { hideLastSeen: e.target.checked }).catch(() => setError("Не вдалося зберегти"))}
+        />
+      </label>
+      <p className="settings-hint">Замість точного часу співрозмовники бачитимуть «був(ла) нещодавно».</p>
       {error && <div className="auth-error">{error}</div>}
+
+      <BlockedUsers user={user} />
 
       <ChatLockSettings user={user} />
     </div>
+  );
+}
+
+function BlockedUsers({ user }: TabProps) {
+  const [people, setPeople] = useState<User[]>([]);
+  const key = (user.blockedUids ?? []).join(",");
+
+  useEffect(() => {
+    let cancelled = false;
+    const uids = key ? key.split(",") : [];
+    Promise.all(uids.map((u) => getUserProfile(u))).then((res) => {
+      if (!cancelled) setPeople(res.filter((p): p is User => !!p));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+
+  return (
+    <>
+      <h3>Заблоковані</h3>
+      {people.length === 0 ? (
+        <p className="settings-hint">Нікого не заблоковано. Заблокувати можна в профілі людини.</p>
+      ) : (
+        people.map((p) => (
+          <div key={p.id} className="switch-row">
+            <span>
+              {p.displayName} <span className="settings-hint">@{p.username}</span>
+            </span>
+            <button type="button" className="btn-ghost" onClick={() => setUserBlocked(user.id, p.id, false)}>
+              Розблокувати
+            </button>
+          </div>
+        ))
+      )}
+    </>
   );
 }
 

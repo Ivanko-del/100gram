@@ -6,6 +6,7 @@ import {
   hideChatForMe,
   searchUsers,
   setChatArchived,
+  setChatMutedForMe,
   setChatPinned,
   startDirectChat,
 } from "../data/firestore-api";
@@ -482,6 +483,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                 <div className="chat-list-item-top">
                   <span className="chat-name">
                     {isLocked(chat.id) ? "🔒 " : ""}
+                    {(user?.mutedChats ?? []).includes(chat.id) ? "🔕 " : ""}
                     {chat.isChannel ? "📢 " : chat.isGroup ? "👥 " : ""}
                     <UserName name={chat.name} emoji={chat.emojiStatus} color={chat.nameColor} />
                   </span>
@@ -554,6 +556,13 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
             >
               <span className="drawer-item-icon">🗄️</span>
               {archived.includes(menuChat.id) ? "Повернути з архіву" : "В архів"}
+            </button>
+            <button
+              className="drawer-item"
+              onClick={() => runChatAction(() => setChatMutedForMe(user.id, menuChat.id, !(user.mutedChats ?? []).includes(menuChat.id)))}
+            >
+              <span className="drawer-item-icon">{(user.mutedChats ?? []).includes(menuChat.id) ? "🔔" : "🔕"}</span>
+              {(user.mutedChats ?? []).includes(menuChat.id) ? "Увімкнути сповіщення" : "Вимкнути сповіщення"}
             </button>
             <button
               className="drawer-item"

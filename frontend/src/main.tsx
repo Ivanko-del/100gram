@@ -5,6 +5,7 @@ import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import { AuthProvider } from "./context/AuthContext";
 import { ChatLockProvider } from "./context/ChatLockContext";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { applyPrefs } from "./utils/prefs";
 import "./styles/index.css";
 
@@ -19,6 +20,7 @@ registerSW({ immediate: true });
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
+    <ErrorBoundary>
     <BrowserRouter>
       <AuthProvider>
         <ChatLockProvider>
@@ -26,5 +28,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         </ChatLockProvider>
       </AuthProvider>
     </BrowserRouter>
+    </ErrorBoundary>
   </React.StrictMode>
 );

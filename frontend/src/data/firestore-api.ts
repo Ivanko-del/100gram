@@ -4,6 +4,7 @@ import {
   deleteUser,
   onAuthStateChanged,
   reauthenticateWithCredential,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
   updatePassword,
@@ -263,6 +264,10 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     profileBanner: (d.profileBanner as string) ?? null,
     phone: (d.phone as string) ?? null,
     hideBirthDate: !!d.hideBirthDate,
+    lastSeenAt: d.lastSeenAt instanceof Timestamp ? d.lastSeenAt.toDate().toISOString() : null,
+    hideLastSeen: !!d.hideLastSeen,
+    mutedChats: (d.mutedChats as string[]) ?? [],
+    blockedUids: (d.blockedUids as string[]) ?? [],
     pinnedChats: (d.pinnedChats as string[]) ?? [],
     archivedChats: (d.archivedChats as string[]) ?? [],
     hiddenChats: (d.hiddenChats as Record<string, string>) ?? {},
@@ -279,7 +284,7 @@ export function subscribeUser(uid: string, cb: (user: User | null) => void) {
 
 export async function updateProfile(
   uid: string,
-  patch: { displayName?: string; bio?: string; avatarColor?: string; avatarUrl?: string | null; showAdminBadge?: boolean; birthDate?: string | null; hideBirthDate?: boolean; emojiStatus?: string | null; statusText?: string | null; nameColor?: string | null; profileBanner?: string | null }
+  patch: { displayName?: string; bio?: string; avatarColor?: string; avatarUrl?: string | null; showAdminBadge?: boolean; birthDate?: string | null; hideBirthDate?: boolean; hideLastSeen?: boolean; emojiStatus?: string | null; statusText?: string | null; nameColor?: string | null; profileBanner?: string | null }
 ) {
   await updateDoc(doc(db, "users", uid), patch);
 }
@@ -422,6 +427,26 @@ export async function ensureSavedChat(me: User): Promise<string> {
 
 export async function setChatPinned(uid: string, chatId: string, pinned: boolean): Promise<void> {
   await updateDoc(doc(db, "users", uid), { pinnedChats: pinned ? arrayUnion(chatId) : arrayRemove(chatId) });
+}
+
+/** Personal "do not disturb" for one chat (no sound), unlike the admin mute. */
+export async function setChatMutedForMe(uid: string, chatId: string, muted: boolean): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { mutedChats: muted ? arrayUnion(chatId) : arrayRemove(chatId) });
+}
+
+/** Soft block: the person's chat disappears from the list and stops making
+ * sounds. (Rules can't stop them from writing - it only mutes them for you.) */
+export async function setUserBlocked(uid: string, otherUid: string, blocked: boolean): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { blockedUids: blocked ? arrayUnion(otherUid) : arrayRemove(otherUid) });
+}
+
+/** Presence heartbeat - the timestamp other people's "last seen" is built from. */
+export async function touchLastSeen(uid: string): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { lastSeenAt: serverTimestamp() }).catch(() => {});
+}
+
+export async function requestPasswordReset(email: string): Promise<void> {
+  await sendPasswordResetEmail(auth, email.trim());
 }
 
 export async function setChatArchived(uid: string, chatId: string, archived: boolean): Promise<void> {

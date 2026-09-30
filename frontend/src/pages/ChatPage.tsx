@@ -20,6 +20,8 @@ export default function ChatPage() {
   const lastSeenRef = useRef<Map<string, string> | null>(null);
   const openChatIdRef = useRef(chatId);
   openChatIdRef.current = chatId;
+  const userRef = useRef(user);
+  userRef.current = user;
 
   useEffect(() => {
     if (!user) return;
@@ -32,6 +34,10 @@ export default function ChatPage() {
           const last = chat.lastMessage;
           if (!last || last.senderId === user.id) continue;
           if (chat.id === openChatIdRef.current) continue;
+          const me = userRef.current;
+          if (me?.mutedChats?.includes(chat.id)) continue;
+          const peerUid = !chat.isGroup ? chat.members.find((m) => m.id !== user.id)?.id : undefined;
+          if (peerUid && me?.blockedUids?.includes(peerUid)) continue;
           const seenAt = previous.get(chat.id);
           if (seenAt !== last.createdAt) playNotificationSound();
         }
@@ -76,8 +82,15 @@ export default function ChatPage() {
       emojiStatus: peer.isPremium ? peer.emojiStatus ?? null : null,
       nameColor: peer.isPremium ? peer.nameColor ?? null : null,
       statusText: peer.isPremium ? peer.statusText ?? null : null,
+      peerId: peer.id,
+      peerLastSeenAt: peer.hideLastSeen ? null : peer.lastSeenAt ?? null,
     };
   });
+
+  const blocked = user?.blockedUids ?? [];
+  const visibleChats = liveChats.filter(
+    (c) => c.isGroup || c.isSaved || !c.members.some((m) => m.id !== user?.id && blocked.includes(m.id))
+  );
 
   const activeChat = liveChats.find((c) => c.id === chatId);
 
@@ -87,7 +100,7 @@ export default function ChatPage() {
 
   return (
     <div className={`app-layout ${chatId ? "mobile-show-detail" : ""}`}>
-      <Sidebar chats={liveChats} activeChatId={chatId} onChatCreated={handleChatCreated} />
+      <Sidebar chats={visibleChats} activeChatId={chatId} onChatCreated={handleChatCreated} />
       {activeChat && isLocked(activeChat.id) && hasPassword && !unlocked ? (
         <div className="chat-window-empty">
           <LockPrompt title={`«${activeChat.name}» заблоковано`} onCancel={() => navigate("/")} />

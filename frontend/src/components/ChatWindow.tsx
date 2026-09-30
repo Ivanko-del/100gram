@@ -6,6 +6,7 @@ import {
   setTyping,
   subscribeMessages,
   subscribeTyping,
+  setUserBlocked,
   toggleReaction,
 } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
@@ -13,6 +14,7 @@ import { FREE_REACTIONS_PER_MESSAGE, PREMIUM_REACTIONS_PER_MESSAGE, REACTIONS_PR
 import { ChatMessage, ChatSummary } from "../types";
 import Avatar from "./Avatar";
 import UserName from "./UserName";
+import { formatLastSeen } from "../utils/lastSeen";
 import MessageBubble from "./MessageBubble";
 import MessageInput from "./MessageInput";
 import MembersListModal from "./MembersListModal";
@@ -118,7 +120,7 @@ export default function ChatWindow({ chat }: Props) {
   const typingLabel = typingUsers.length > 0 ? `${typingUsers.join(", ")} друкує…` : null;
   const subtitle =
     typingLabel ??
-    (chat.isSaved ? "Твої нотатки й файли" : !isGroup && chat.statusText ? chat.statusText : isChannel ? `${chat.members.length} підписників` : isGroup ? `${chat.members.length} учасників` : "в мережі");
+    (chat.isSaved ? "Твої нотатки й файли" : !isGroup && chat.statusText ? chat.statusText : isChannel ? `${chat.members.length} підписників` : isGroup ? `${chat.members.length} учасників` : formatLastSeen(chat.peerLastSeenAt));
   const otherMember = !isGroup ? chat.members.find((m) => m.id !== user?.id) : undefined;
 
   function openHeaderInfo() {
@@ -189,7 +191,14 @@ export default function ChatWindow({ chat }: Props) {
 
       {sendError && <div className="auth-error chat-send-error">{sendError}</div>}
 
-      {canPost ? (
+      {!chat.isGroup && chat.peerId && (user?.blockedUids ?? []).includes(chat.peerId) ? (
+        <div className="channel-readonly-note">
+          Ти заблокував(ла) цього користувача.{" "}
+          <button className="btn-link" onClick={() => user && setUserBlocked(user.id, chat.peerId!, false)}>
+            Розблокувати
+          </button>
+        </div>
+      ) : canPost ? (
         <MessageInput onSend={sendMessage} onSendImage={sendImage} onTyping={handleTyping} disabled={!user} />
       ) : muted ? (
         <div className="channel-readonly-note">🔇 Тебе заглушено {chat.mutedUids.includes(user?.id ?? "") ? "в цьому чаті" : ""}</div>

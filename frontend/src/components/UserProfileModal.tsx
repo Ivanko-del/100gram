@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getUserProfile, setGlobalMute, setUserBadge, startDirectChat } from "../data/firestore-api";
+import { getUserProfile, setGlobalMute, setUserBadge, startDirectChat, setUserBlocked } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
 import { BADGE_COLORS, PROFILE_BANNERS, isSiteAdmin } from "../constants";
 import { User } from "../types";
@@ -138,6 +138,14 @@ export default function UserProfileModal({ uid, onClose }: Props) {
             {!isSelf && (
               <button className="btn-primary" onClick={message} disabled={starting}>
                 {starting ? "Відкриття…" : "✉️ Написати повідомлення"}
+              </button>
+            )}
+            {!isSelf && me && (
+              <button
+                className="btn-ghost"
+                onClick={() => setUserBlocked(me.id, profile.id, !(me.blockedUids ?? []).includes(profile.id))}
+              >
+                {(me.blockedUids ?? []).includes(profile.id) ? "✅ Розблокувати" : "🚫 Заблокувати"}
               </button>
             )}
 

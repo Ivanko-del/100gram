@@ -3,12 +3,12 @@ import { Link } from "react-router-dom";
 import type { ConfirmationResult } from "firebase/auth";
 import { useAuth } from "../context/AuthContext";
 import { firebaseConfigured } from "../firebase";
-import { requireProfileAfterPhoneLogin } from "../data/firestore-api";
+import { requestPasswordReset, requireProfileAfterPhoneLogin } from "../data/firestore-api";
 import { phoneAuthError, sendSignInCode } from "../data/phone-auth";
 import { normalizePhone } from "../utils/phone";
 import SmsCodeStep from "../components/SmsCodeStep";
 
-type Mode = "email" | "phone";
+type Mode = "email" | "phone" | "reset";
 
 export default function Login() {
   const { login } = useAuth();
@@ -18,6 +18,7 @@ export default function Login() {
   const [phone, setPhone] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const confirmation = useRef<ConfirmationResult | null>(null);
   const recaptchaRef = useRef<HTMLDivElement>(null);
@@ -27,6 +28,7 @@ export default function Login() {
   function switchMode(next: Mode) {
     setMode(next);
     setError(null);
+    setNote(null);
     setCodeSent(false);
   }
 
@@ -38,6 +40,29 @@ export default function Login() {
       await login(email.trim(), password);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка входу");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function onReset(e: FormEvent) {
+    e.preventDefault();
+    if (!email.trim()) return setError("Вкажи email акаунта");
+    setError(null);
+    setNote(null);
+    setSubmitting(true);
+    try {
+      await requestPasswordReset(email);
+      setNote("Готово. Якщо акаунт із такою поштою існує, ми надіслали лист із посиланням для нового пароля (перевір і «Спам»).");
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      setError(
+        code === "auth/invalid-email"
+          ? "Некоректний email"
+          : code === "auth/too-many-requests"
+            ? "Забагато спроб. Спробуй пізніше"
+            : "Не вдалося надіслати лист"
+      );
     } finally {
       setSubmitting(false);
     }
@@ -88,6 +113,7 @@ export default function Login() {
 
         {!firebaseConfigured && <div className="auth-error">Firebase ще не налаштований — see firebase.ts</div>}
 
+        {mode !== "reset" && (
         <div className="auth-tabs modal-tabs">
           <button type="button" className={mode === "email" ? "active" : ""} onClick={() => switchMode("email")}>
             ✉️ Email
@@ -96,8 +122,25 @@ export default function Login() {
             📱 Телефон
           </button>
         </div>
+        )}
 
-        {mode === "email" ? (
+        {mode === "reset" ? (
+          <form className="auth-form" onSubmit={onReset}>
+            <p className="settings-hint">Введи email акаунта, і ми надішлемо лист для скидання пароля.</p>
+            <label>
+              Email
+              <input autoFocus type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="anton@mail.com" />
+            </label>
+            {note && <div className="auth-success">{note}</div>}
+            {error && <div className="auth-error">{error}</div>}
+            <button className="btn-primary" type="submit" disabled={submitting}>
+              {submitting ? "Надсилаємо…" : "Надіслати лист"}
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => switchMode("email")}>
+              ← Назад до входу
+            </button>
+          </form>
+        ) : mode === "email" ? (
           <form className="auth-form" onSubmit={onEmailSubmit}>
             <label>
               Email
@@ -125,6 +168,9 @@ export default function Login() {
 
             <button className="btn-primary" type="submit" disabled={submitting || !firebaseConfigured}>
               {submitting ? "Вхід…" : "Увійти"}
+            </button>
+            <button type="button" className="btn-link" onClick={() => switchMode("reset")}>
+              Забув пароль?
             </button>
           </form>
         ) : codeSent && phoneDigits ? (

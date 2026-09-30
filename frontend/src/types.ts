@@ -21,6 +21,12 @@ export interface User {
   phone?: string | null;
   /** Hide the birth date from other users' view of this profile */
   hideBirthDate?: boolean;
+  /** Last time the app was open (heartbeat); hidden from others when hideLastSeen */
+  lastSeenAt?: string | null;
+  hideLastSeen?: boolean;
+  /** Chats the user muted for themselves (no sound), and users they blocked */
+  mutedChats?: string[];
+  blockedUids?: string[];
   /** Premium cosmetics, shown only while premium is active */
   emojiStatus?: string | null;
   statusText?: string | null;
@@ -61,6 +67,9 @@ export interface ChatSummary {
   mutedUids: string[];
   /** The per-user "Saved messages" chat (only member is its owner) */
   isSaved?: boolean;
+  /** Direct chats: the other person's last-seen time (null when hidden/unknown) */
+  peerLastSeenAt?: string | null;
+  peerId?: string | null;
   /** Direct chats: the other person's premium cosmetics */
   emojiStatus?: string | null;
   nameColor?: string | null;

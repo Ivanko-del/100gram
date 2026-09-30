@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import type { User as FirebaseAuthUser } from "firebase/auth";
-import { DataError, loginUser, logoutUser, subscribeUser, watchAuth } from "../data/firestore-api";
+import { DataError, loginUser, logoutUser, subscribeUser, touchLastSeen, watchAuth } from "../data/firestore-api";
 import { User } from "../types";
 import { enforceFreeTier } from "../utils/prefs";
 
@@ -50,6 +50,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     return unsub;
   }, []);
+
+  // "Last seen": ping while the app is open and visible
+  useEffect(() => {
+    if (!uid) return;
+    const ping = () => {
+      if (document.visibilityState === "visible") touchLastSeen(uid);
+    };
+    ping();
+    const timer = window.setInterval(ping, 60_000);
+    document.addEventListener("visibilitychange", ping);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", ping);
+    };
+  }, [uid]);
 
   useEffect(() => {
     if (!uid) return;
