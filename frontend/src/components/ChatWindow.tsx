@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   deleteMessage,
+  markChatRead,
   sendMessage as sendMessageApi,
   setTyping,
   subscribeMessages,
@@ -15,6 +16,7 @@ import { ChatMessage, ChatSummary } from "../types";
 import Avatar from "./Avatar";
 import UserName from "./UserName";
 import { formatLastSeen } from "../utils/lastSeen";
+import { isUnread } from "../utils/unread";
 import MessageBubble from "./MessageBubble";
 import MessageInput from "./MessageInput";
 import MembersListModal from "./MembersListModal";
@@ -51,6 +53,18 @@ export default function ChatWindow({ chat }: Props) {
     const unsub = subscribeTyping(chat.id, user.id, setTypingUsers);
     return unsub;
   }, [chat.id, user?.id]);
+
+  // Reading: mark the chat read whenever it is open, visible and has news
+  useEffect(() => {
+    if (!user) return;
+    const mark = () => {
+      if (document.visibilityState === "visible" && isUnread(chat, user.id)) markChatRead(chat.id, user.id);
+    };
+    mark();
+    document.addEventListener("visibilitychange", mark);
+    return () => document.removeEventListener("visibilitychange", mark);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.id, chat.lastMessage?.createdAt, chat.readBy[user?.id ?? ""], user?.id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -183,6 +197,7 @@ export default function ChatWindow({ chat }: Props) {
               myUid={user?.id}
               isPremium={user?.isPremium}
               onReact={handleReact}
+              peerReadAt={!isGroup && !chat.isSaved && chat.peerId ? chat.readBy[chat.peerId] ?? null : undefined}
             />
           );
         })}

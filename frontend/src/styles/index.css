@@ -2550,3 +2550,46 @@ textarea {
   padding: 4px;
   align-self: center;
 }
+
+/* ---------- Unread badges & read ticks ---------- */
+.chat-list-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.chat-list-item-row .chat-list-item-bottom {
+  flex: 1;
+  min-width: 0;
+}
+
+.unread-badge {
+  flex-shrink: 0;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  margin-top: 2px;
+  border-radius: 11px;
+  background: var(--accent-strong);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+}
+
+.unread-badge.muted {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.message-ticks {
+  margin-left: 4px;
+  opacity: 0.7;
+  letter-spacing: -2px;
+}
+
+.message-ticks.read {
+  color: var(--accent);
+  opacity: 1;
+}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { subscribeChats, subscribePublicProfile } from "../data/firestore-api";
+import { markChatRead, subscribeChats, subscribePublicProfile } from "../data/firestore-api";
+import { useUnreadCounts } from "../hooks/useUnreadCounts";
 import { useAuth } from "../context/AuthContext";
 import { playNotificationSound } from "../utils/sound";
 import Sidebar from "../components/Sidebar";
@@ -86,6 +87,23 @@ export default function ChatPage() {
       peerLastSeenAt: peer.hideLastSeen ? null : peer.lastSeenAt ?? null,
     };
   });
+
+  // Chats that predate read tracking get a silent "read now" mark, so old
+  // history doesn't light up as unread.
+  const initKey = chats.filter((c) => user && !c.readBy[user.id]).map((c) => c.id).join(",");
+  useEffect(() => {
+    if (!user || !initKey) return;
+    initKey.split(",").forEach((id) => markChatRead(id, user.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initKey, user?.id]);
+
+  const unreadCounts = useUnreadCounts(chats, user?.id);
+  const totalUnread = Object.entries(unreadCounts)
+    .filter(([id]) => !(user?.mutedChats ?? []).includes(id))
+    .reduce((sum, [, n]) => sum + n, 0);
+  useEffect(() => {
+    document.title = totalUnread > 0 ? `(${totalUnread}) 100 ГРАМ` : "100 ГРАМ";
+  }, [totalUnread]);
 
   const blocked = user?.blockedUids ?? [];
   const visibleChats = liveChats.filter(

@@ -14,6 +14,7 @@ import { useAuth } from "../context/AuthContext";
 import { ChatSummary, PublicUser } from "../types";
 import Avatar from "./Avatar";
 import UserName from "./UserName";
+import { useUnreadCounts } from "../hooks/useUnreadCounts";
 import LockPrompt from "./LockPrompt";
 import LockSetupModal from "./LockSetupModal";
 import { setChatHidden, setChatLocked } from "../data/chat-lock";
@@ -82,6 +83,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
   const [showArchive, setShowArchive] = useState(false);
   const [showVault, setShowVault] = useState(false);
   const { lock, hasPassword, unlocked, isLocked } = useChatLock();
+  const unreadCounts = useUnreadCounts(chats, user?.id);
   const [setupThen, setSetupThen] = useState<(() => void) | null>(null);
   const [unlockThen, setUnlockThen] = useState<(() => void) | null>(null);
   const [menuChat, setMenuChat] = useState<ChatSummary | null>(null);
@@ -492,8 +494,15 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                     {chat.lastMessage && formatTime(chat.lastMessage.createdAt)}
                   </span>
                 </div>
-                <div className="chat-list-item-bottom">
-                  {isLocked(chat.id) && !unlocked ? "🔒 Чат заблоковано" : chat.lastMessage?.content ?? "Немає повідомлень"}
+                <div className="chat-list-item-row">
+                  <div className="chat-list-item-bottom">
+                    {isLocked(chat.id) && !unlocked ? "🔒 Чат заблоковано" : chat.lastMessage?.content ?? "Немає повідомлень"}
+                  </div>
+                  {unreadCounts[chat.id] > 0 && chat.id !== activeChatId && (
+                    <span className={`unread-badge ${(user?.mutedChats ?? []).includes(chat.id) ? "muted" : ""}`}>
+                      {unreadCounts[chat.id] > 99 ? "99+" : unreadCounts[chat.id]}
+                    </span>
+                  )}
                 </div>
               </div>
             </button>

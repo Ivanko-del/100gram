@@ -108,10 +108,18 @@ service cloud.firestore {
           && request.resource.data.adminUids == resource.data.adminUids
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["memberUids", "memberProfiles"]);
       }
+      // `readBy` maps uid -> when they last read; a member may only touch
+      // their OWN entry.
+      function readByChangeOk() {
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(["readBy"])
+          || request.resource.data.readBy.diff(resource.data.get('readBy', {})).affectedKeys().hasOnly([request.auth.uid]);
+      }
       allow update: if isSignedIn() && request.auth.uid in resource.data.memberUids
         && (
-          // any member may bump the "last message" preview when sending
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["updatedAt", "lastMessage"])
+          // any member may bump the "last message" preview when sending and
+          // mark the chat read for themselves
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(["updatedAt", "lastMessage", "readBy"])
+            && readByChangeOk())
           // any member may invite more people into a plain group; channels
           // need admin rights even just to invite
           || (resource.data.isChannel != true && isMemberAddition())

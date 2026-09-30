@@ -12,13 +12,15 @@ interface Props {
   myUid?: string;
   isPremium?: boolean;
   onReact?: (message: ChatMessage, emoji: string) => void;
+  /** Direct chats: when the other person last read - drives ✓ / ✓✓ on my messages */
+  peerReadAt?: string | null;
 }
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
 }
 
-export default function MessageBubble({ message, isOwn, showSender, canDelete, onDelete, myUid, isPremium, onReact }: Props) {
+export default function MessageBubble({ message, isOwn, showSender, canDelete, onDelete, myUid, isPremium, onReact, peerReadAt }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [picking, setPicking] = useState(false);
   const reactions = Object.entries(message.reactions ?? {}).filter(([, uids]) => uids.length > 0);
@@ -59,7 +61,14 @@ export default function MessageBubble({ message, isOwn, showSender, canDelete, o
             ))}
           </div>
         )}
-        <div className="message-time">{formatTime(message.createdAt)}</div>
+        <div className="message-time">
+          {formatTime(message.createdAt)}
+          {isOwn && peerReadAt !== undefined && (
+            <span className={`message-ticks ${peerReadAt && new Date(peerReadAt) >= new Date(message.createdAt) ? "read" : ""}`}>
+              {peerReadAt && new Date(peerReadAt) >= new Date(message.createdAt) ? "✓✓" : "✓"}
+            </span>
+          )}
+        </div>
         {onReact && (
           <button type="button" className="message-react-btn" onClick={() => setPicking((v) => !v)} title="Реакція">
             ☺

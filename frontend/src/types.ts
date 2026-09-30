@@ -75,6 +75,8 @@ export interface ChatSummary {
   nameColor?: string | null;
   statusText?: string | null;
   lastMessage: { content: string; createdAt: string; senderId: string } | null;
+  /** uid -> when that member last read the chat (drives unread badges and ✓✓) */
+  readBy: Record<string, string>;
   updatedAt: string;
 }
 

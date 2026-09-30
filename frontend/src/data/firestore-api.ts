@@ -21,6 +21,7 @@ import {
   doc,
   endAt,
   getDoc,
+  getCountFromServer,
   getDocs,
   increment,
   limit,
@@ -393,6 +394,9 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
     adminUids: (d.adminUids as string[]) ?? [],
     mutedUids: (d.mutedUids as string[]) ?? [],
     lastMessage,
+    readBy: Object.fromEntries(
+      Object.entries((d.readBy as Record<string, unknown>) ?? {}).map(([uid, ts]) => [uid, tsToIso(ts)])
+    ),
     updatedAt: d.updatedAt ? tsToIso(d.updatedAt) : tsToIso(d.createdAt),
   };
 }
@@ -430,6 +434,18 @@ export async function setChatPinned(uid: string, chatId: string, pinned: boolean
 }
 
 /** Personal "do not disturb" for one chat (no sound), unlike the admin mute. */
+/** Marks the chat as read by this user up to now (server time). */
+export async function markChatRead(chatId: string, uid: string): Promise<void> {
+  await updateDoc(doc(db, "chats", chatId), new FieldPath("readBy", uid), serverTimestamp()).catch(() => {});
+}
+
+/** How many messages arrived after `sinceIso` (server-side count, cheap). */
+export async function countMessagesSince(chatId: string, sinceIso: string): Promise<number> {
+  const qy = query(collection(db, "chats", chatId, "messages"), where("createdAt", ">", Timestamp.fromDate(new Date(sinceIso))));
+  const snap = await getCountFromServer(qy);
+  return snap.data().count;
+}
+
 export async function setChatMutedForMe(uid: string, chatId: string, muted: boolean): Promise<void> {
   await updateDoc(doc(db, "users", uid), { mutedChats: muted ? arrayUnion(chatId) : arrayRemove(chatId) });
 }
@@ -671,6 +687,8 @@ export async function sendMessage(chatId: string, sender: User, content: string,
   batch.update(chatRef, {
     updatedAt: createdAt,
     lastMessage: { content: type === "image" ? "📷 Фото" : content, senderUid: sender.id, createdAt },
+    // sending counts as reading up to this message (keeps unread counts right)
+    [`readBy.${sender.id}`]: createdAt,
   });
   await batch.commit();
 }
