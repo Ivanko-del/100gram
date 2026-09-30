@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   deleteMessage,
+  editMessage,
   markChatRead,
   sendMessage as sendMessageApi,
   setTyping,
@@ -15,6 +16,7 @@ import { FREE_REACTIONS_PER_MESSAGE, PREMIUM_REACTIONS_PER_MESSAGE, REACTIONS_PR
 import { ChatMessage, ChatSummary } from "../types";
 import Avatar from "./Avatar";
 import UserName from "./UserName";
+import ForwardModal from "./ForwardModal";
 import { formatLastSeen } from "../utils/lastSeen";
 import { isUnread } from "../utils/unread";
 import MessageBubble from "./MessageBubble";
@@ -24,9 +26,13 @@ import UserProfileModal from "./UserProfileModal";
 
 interface Props {
   chat: ChatSummary;
+  /** all visible chats, offered as targets when forwarding a message */
+  chats?: ChatSummary[];
 }
 
-export default function ChatWindow({ chat }: Props) {
+const PAGE_SIZE = 60;
+
+export default function ChatWindow({ chat, chats = [] }: Props) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -36,17 +42,37 @@ export default function ChatWindow({ chat }: Props) {
   const [profileUid, setProfileUid] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [forwardMsg, setForwardMsg] = useState<ChatMessage | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const loadingOlder = useRef(false);
 
+  // a different chat: start from a clean slate
   useEffect(() => {
     setLoading(true);
     setMessages([]);
     setSendError(null);
-    const unsub = subscribeMessages(chat.id, (msgs) => {
-      setMessages(msgs);
-      setLoading(false);
-    });
-    return unsub;
+    setPageSize(PAGE_SIZE);
+    setReplyTo(null);
+    setSearchOpen(false);
+    setSearchQuery("");
   }, [chat.id]);
+
+  // live view of the newest `pageSize` messages
+  useEffect(() => {
+    const unsub = subscribeMessages(
+      chat.id,
+      (msgs) => {
+        setMessages(msgs);
+        setLoading(false);
+      },
+      pageSize
+    );
+    return unsub;
+  }, [chat.id, pageSize]);
 
   useEffect(() => {
     if (!user) return;
@@ -67,6 +93,11 @@ export default function ChatWindow({ chat }: Props) {
   }, [chat.id, chat.lastMessage?.createdAt, chat.readBy[user?.id ?? ""], user?.id]);
 
   useEffect(() => {
+    // loading older history must not yank the view down to the newest message
+    if (loadingOlder.current) {
+      loadingOlder.current = false;
+      return;
+    }
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
@@ -93,7 +124,48 @@ export default function ChatWindow({ chat }: Props) {
   function sendMessage(content: string) {
     if (!user) return;
     setSendError(null);
-    sendMessageApi(chat.id, user, content, "text").catch((err) => setSendError(describeSendError(err)));
+    const reply = replyTo
+      ? {
+          id: replyTo.id,
+          name: replyTo.sender.displayName,
+          text: replyTo.type === "image" ? "" : replyTo.content.slice(0, 140),
+          type: replyTo.type,
+        }
+      : null;
+    setReplyTo(null);
+    sendMessageApi(chat.id, user, content, "text", { replyTo: reply }).catch((err) => setSendError(describeSendError(err)));
+  }
+
+  function handleEdit(message: ChatMessage, text: string) {
+    const isLast = messages[messages.length - 1]?.id === message.id;
+    editMessage(chat.id, { id: message.id, createdAt: message.createdAt, senderId: message.sender.id }, text, isLast).catch((err) =>
+      setSendError(describeSendError(err))
+    );
+  }
+
+  function forwardTo(target: ChatSummary) {
+    if (!user || !forwardMsg) return;
+    const from = forwardMsg.forwardedFrom ?? forwardMsg.sender.displayName;
+    sendMessageApi(target.id, user, forwardMsg.content, forwardMsg.type, { forwardedFrom: from }).catch((err) =>
+      setSendError(describeSendError(err))
+    );
+    setForwardMsg(null);
+  }
+
+  function jumpTo(messageId: string) {
+    const el = document.getElementById(`msg-${messageId}`);
+    if (!el) {
+      setSendError("Це повідомлення завантажене не повністю — натисни «Показати раніше»");
+      return;
+    }
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightId(messageId);
+    setTimeout(() => setHighlightId(null), 1500);
+  }
+
+  function loadOlder() {
+    loadingOlder.current = true;
+    setPageSize((n) => n + PAGE_SIZE);
   }
 
   function sendImage(url: string) {
@@ -124,6 +196,11 @@ export default function ChatWindow({ chat }: Props) {
   function handleDelete(messageId: string) {
     deleteMessage(chat.id, messageId).catch((err) => setSendError(describeSendError(err)));
   }
+
+  const query = searchQuery.trim().toLowerCase();
+  const shownMessages = query ? messages.filter((m) => m.type === "text" && m.content.toLowerCase().includes(query)) : messages;
+  const hasMore = messages.length >= pageSize && !query;
+  const targets = chats.filter((c) => c.id !== chat.id && (!c.isChannel || (user && c.adminUids.includes(user.id))));
 
   const isGroup = chat.isGroup;
   const isChannel = chat.isChannel;
@@ -161,7 +238,23 @@ export default function ChatWindow({ chat }: Props) {
             <div className="chat-window-subtitle">{subtitle}</div>
           </div>
         </button>
+        <span className="header-spacer" />
+        <button type="button" className="header-icon-btn" onClick={() => { setSearchOpen((v) => !v); setSearchQuery(""); }} aria-label="Пошук у чаті">
+          🔍
+        </button>
       </header>
+
+      {searchOpen && (
+        <div className="chat-search-bar">
+          <input
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Пошук у цьому чаті"
+          />
+          {query && <span className="settings-hint">{shownMessages.length}</span>}
+        </div>
+      )}
 
       {showMembers && (
         <MembersListModal
@@ -182,8 +275,13 @@ export default function ChatWindow({ chat }: Props) {
             {isChannel ? (canPost ? "Опублікуй перший допис 📢" : "Тут поки що немає дописів") : "Напишіть перше повідомлення 👋"}
           </div>
         )}
-        {messages.map((m, idx) => {
-          const prev = messages[idx - 1];
+        {hasMore && (
+          <button type="button" className="btn-ghost load-older" onClick={loadOlder}>
+            Показати раніше
+          </button>
+        )}
+        {shownMessages.map((m, idx) => {
+          const prev = shownMessages[idx - 1];
           const showSender = isGroup && !isChannel && (!prev || prev.sender.id !== m.sender.id);
           const isOwn = m.sender.id === user?.id;
           return (
@@ -197,6 +295,11 @@ export default function ChatWindow({ chat }: Props) {
               myUid={user?.id}
               isPremium={user?.isPremium}
               onReact={handleReact}
+              onReply={canPost ? setReplyTo : undefined}
+              onEdit={handleEdit}
+              onForward={setForwardMsg}
+              onJump={jumpTo}
+              highlight={highlightId === m.id}
               peerReadAt={!isGroup && !chat.isSaved && chat.peerId ? chat.readBy[chat.peerId] ?? null : undefined}
             />
           );
@@ -205,6 +308,20 @@ export default function ChatWindow({ chat }: Props) {
       </div>
 
       {sendError && <div className="auth-error chat-send-error">{sendError}</div>}
+
+      {forwardMsg && <ForwardModal chats={targets} onPick={forwardTo} onClose={() => setForwardMsg(null)} />}
+
+      {replyTo && canPost && (
+        <div className="reply-bar">
+          <div className="reply-bar-body">
+            <span className="reply-bar-name">Відповідь для {replyTo.sender.displayName}</span>
+            <span className="reply-bar-text">{replyTo.type === "image" ? "📷 Фото" : replyTo.content}</span>
+          </div>
+          <button type="button" className="icon-btn" onClick={() => setReplyTo(null)} aria-label="Скасувати відповідь">
+            ✕
+          </button>
+        </div>
+      )}
 
       {!chat.isGroup && chat.peerId && (user?.blockedUids ?? []).includes(chat.peerId) ? (
         <div className="channel-readonly-note">

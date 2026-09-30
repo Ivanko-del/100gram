@@ -99,6 +99,10 @@ export interface ChatMessage {
   sender: MessageSender;
   /** emoji -> uids that reacted with it */
   reactions: Record<string, string[]>;
+  /** set when this message answers another one */
+  replyTo?: { id: string; name: string; text: string; type: "text" | "image" } | null;
+  /** original author's name when the message was forwarded */
+  forwardedFrom?: string | null;
 }
 
 export interface PremiumPlan {

@@ -657,17 +657,33 @@ function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, c
       nameColor: (d.senderNameColor as string) ?? null,
     },
     reactions: (d.reactions as Record<string, string[]>) ?? {},
+    editedAt: d.editedAt instanceof Timestamp ? d.editedAt.toDate().toISOString() : null,
+    replyTo: (d.replyTo as ChatMessage["replyTo"]) ?? null,
+    forwardedFrom: (d.forwardedFrom as string) ?? null,
   };
 }
 
-export function subscribeMessages(chatId: string, cb: (messages: ChatMessage[]) => void) {
-  const qy = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "asc"), limit(200));
+/** Live view of the newest `count` messages (oldest first). Raise `count`
+ * to reveal older history. */
+export function subscribeMessages(chatId: string, cb: (messages: ChatMessage[]) => void, count = 60) {
+  const qy = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc"), limit(count));
   return onSnapshot(qy, (snap) => {
-    cb(snap.docs.map((d) => mapMessage(d, chatId)));
+    cb(snap.docs.map((d) => mapMessage(d, chatId)).reverse());
   });
 }
 
-export async function sendMessage(chatId: string, sender: User, content: string, type: "text" | "image" = "text") {
+export interface SendExtras {
+  replyTo?: ChatMessage["replyTo"];
+  forwardedFrom?: string | null;
+}
+
+export async function sendMessage(
+  chatId: string,
+  sender: User,
+  content: string,
+  type: "text" | "image" = "text",
+  extras: SendExtras = {}
+) {
   const chatRef = doc(db, "chats", chatId);
   const msgRef = doc(collection(chatRef, "messages"));
   const createdAt = serverTimestamp();
@@ -683,6 +699,8 @@ export async function sendMessage(chatId: string, sender: User, content: string,
     content,
     type,
     createdAt,
+    ...(extras.replyTo ? { replyTo: extras.replyTo } : {}),
+    ...(extras.forwardedFrom ? { forwardedFrom: extras.forwardedFrom } : {}),
   });
   batch.update(chatRef, {
     updatedAt: createdAt,
@@ -714,6 +732,25 @@ export async function toggleReaction(
     args.push(new FieldPath("reactions", mine[0]), arrayRemove(uid));
   }
   await (updateDoc as (r: unknown, ...a: unknown[]) => Promise<void>)(ref, ...args);
+}
+
+/** Edits the text of one of your own messages. If it is the newest message
+ * of the chat, the list preview is refreshed too. */
+export async function editMessage(
+  chatId: string,
+  message: { id: string; createdAt: string; senderId: string },
+  content: string,
+  isLast: boolean
+): Promise<void> {
+  const chatRef = doc(db, "chats", chatId);
+  const batch = writeBatch(db);
+  batch.update(doc(chatRef, "messages", message.id), { content, editedAt: serverTimestamp() });
+  if (isLast) {
+    batch.update(chatRef, {
+      lastMessage: { content, senderUid: message.senderId, createdAt: Timestamp.fromDate(new Date(message.createdAt)) },
+    });
+  }
+  await batch.commit();
 }
 
 /** Deletes a message. Firestore rules allow this for the message's own

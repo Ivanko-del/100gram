@@ -124,7 +124,7 @@ export default function ChatPage() {
           <LockPrompt title={`«${activeChat.name}» заблоковано`} onCancel={() => navigate("/")} />
         </div>
       ) : activeChat ? (
-        <ChatWindow chat={activeChat} />
+        <ChatWindow chat={activeChat} chats={visibleChats} />
       ) : (
         <div className="chat-window-empty">
           {loading ? "Завантаження чатів…" : (

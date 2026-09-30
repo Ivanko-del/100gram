@@ -145,11 +145,17 @@ service cloud.firestore {
           && canPostIn()
           && !isChatMuted()
           && !isGloballyMuted();
-        // Members may only change a message's `reactions` map (emoji ->
-        // list of uids); text, sender and time are immutable.
+        // Members may change a message's `reactions` map (emoji -> list of
+        // uids); only the author may edit its text. Sender and time are
+        // immutable.
         allow update: if isSignedIn()
           && request.auth.uid in chatData().memberUids
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["reactions"]);
+          && (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(["reactions"])
+            // the author may edit their own message text
+            || (resource.data.senderUid == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["content", "editedAt"]))
+          );
         // Anyone may delete their own message; the site admin may delete
         // any message anywhere, for moderation.
         allow delete: if isSignedIn() && (resource.data.senderUid == request.auth.uid || isSiteAdmin());
