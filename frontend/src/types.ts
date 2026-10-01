@@ -15,6 +15,28 @@ export interface User {
   premiumUntil?: string | null;
   grams: number;
   mutedGlobally?: boolean;
+  /** Optional, ISO date (YYYY-MM-DD) */
+  birthDate?: string | null;
+  /** Digits only, international format (see utils/phone.ts). Unverified. */
+  phone?: string | null;
+  /** Hide the birth date from other users' view of this profile */
+  hideBirthDate?: boolean;
+  /** Last time the app was open (heartbeat); hidden from others when hideLastSeen */
+  lastSeenAt?: string | null;
+  hideLastSeen?: boolean;
+  /** Chats the user muted for themselves (no sound), and users they blocked */
+  mutedChats?: string[];
+  blockedUids?: string[];
+  /** Premium cosmetics, shown only while premium is active */
+  emojiStatus?: string | null;
+  statusText?: string | null;
+  nameColor?: string | null;
+  profileBanner?: string | null;
+  /** Per-user chat list prefs ("Telegram-style" pin / archive / delete-for-me) */
+  pinnedChats?: string[];
+  archivedChats?: string[];
+  /** chatId -> ISO time the user removed it; it comes back on a newer message */
+  hiddenChats?: Record<string, string>;
   badge?: UserBadge | null;
   showAdminBadge?: boolean;
 }
@@ -28,6 +50,9 @@ export interface PublicUser {
   avatarUrl?: string | null;
   isPremium: boolean;
   lastSeenAt?: string;
+  emojiStatus?: string | null;
+  nameColor?: string | null;
+  statusText?: string | null;
 }
 
 export interface ChatSummary {
@@ -40,7 +65,20 @@ export interface ChatSummary {
   members: PublicUser[];
   adminUids: string[];
   mutedUids: string[];
+  /** The per-user "Saved messages" chat (only member is its owner) */
+  isSaved?: boolean;
+  /** Groups/channels: text shown in the members panel */
+  description?: string | null;
+  /** Direct chats: the other person's last-seen time (null when hidden/unknown) */
+  peerLastSeenAt?: string | null;
+  peerId?: string | null;
+  /** Direct chats: the other person's premium cosmetics */
+  emojiStatus?: string | null;
+  nameColor?: string | null;
+  statusText?: string | null;
   lastMessage: { content: string; createdAt: string; senderId: string } | null;
+  /** uid -> when that member last read the chat (drives unread badges and ✓✓) */
+  readBy: Record<string, string>;
   updatedAt: string;
 }
 
@@ -49,6 +87,8 @@ export interface MessageSender {
   username: string;
   displayName: string;
   avatarColor: string;
+  emojiStatus?: string | null;
+  nameColor?: string | null;
 }
 
 export interface ChatMessage {
@@ -57,7 +97,14 @@ export interface ChatMessage {
   content: string;
   type: "text" | "image";
   createdAt: string;
+  editedAt?: string | null;
   sender: MessageSender;
+  /** emoji -> uids that reacted with it */
+  reactions: Record<string, string[]>;
+  /** set when this message answers another one */
+  replyTo?: { id: string; name: string; text: string; type: "text" | "image" } | null;
+  /** original author's name when the message was forwarded */
+  forwardedFrom?: string | null;
 }
 
 export interface PremiumPlan {

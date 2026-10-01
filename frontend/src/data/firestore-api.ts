@@ -11,6 +11,7 @@ import {
   type User as FirebaseAuthUser,
 } from "firebase/auth";
 import {
+  FieldPath,
   Timestamp,
   arrayRemove,
   arrayUnion,
@@ -20,6 +21,7 @@ import {
   doc,
   endAt,
   getDoc,
+  getCountFromServer,
   getDocs,
   increment,
   limit,
@@ -29,7 +31,6 @@ import {
   runTransaction,
   serverTimestamp,
   setDoc,
-  startAfter,
   startAt,
   updateDoc,
   where,
@@ -37,6 +38,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { AVATAR_COLORS, WELCOME_BONUS } from "../constants";
+import { clearChatLock } from "./chat-lock";
 import { ChatMessage, ChatSummary, PremiumPlan, PublicUser, User, UserBadge, WalletTransaction } from "../types";
 
 export class DataError extends Error {}
@@ -66,28 +68,53 @@ export function getCurrentEmail(): string | null {
   return auth.currentUser?.email ?? null;
 }
 
-export async function registerUser(
+/** Step 1 of sign-up: the email/password account. The profile document is
+ * only written by `finishRegistration`, after the phone is SMS-verified. */
+export async function createAuthAccount(email: string, password: string): Promise<void> {
+  await createUserWithEmailAndPassword(auth, email, password);
+}
+
+/** Drops a half-finished sign-up (auth account without a profile). */
+export async function discardUnfinishedAccount(): Promise<void> {
+  const fbUser = auth.currentUser;
+  if (!fbUser) return;
+  try {
+    await deleteUser(fbUser);
+  } catch {
+    await signOut(auth).catch(() => {});
+  }
+}
+
+/** Step 2 of sign-up, once the phone is verified and linked: reserves the
+ * username + phone and creates the profile in one transaction. */
+export async function finishRegistration(
   username: string,
-  email: string,
-  password: string,
-  displayName: string
+  displayName: string,
+  birthDate: string | null,
+  phone: string
 ): Promise<string> {
+  const fbUser = auth.currentUser;
+  if (!fbUser) throw new DataError("Сесію реєстрації втрачено — почни спочатку");
+  const uid = fbUser.uid;
   const usernameLower = username.trim().toLowerCase();
-  const cred = await createUserWithEmailAndPassword(auth, email, password);
-  const uid = cred.user.uid;
   try {
     await runTransaction(db, async (tx) => {
       const usernameRef = doc(db, "usernames", usernameLower);
-      const usernameSnap = await tx.get(usernameRef);
-      if (usernameSnap.exists()) throw new DataError("Це ім'я користувача вже зайняте");
+      if ((await tx.get(usernameRef)).exists()) throw new DataError("Це ім'я користувача вже зайняте");
+
+      const phoneRef = doc(db, "phones", phone);
+      if ((await tx.get(phoneRef)).exists()) throw new DataError("Цей номер телефону вже зареєстровано");
 
       const userRef = doc(db, "users", uid);
       tx.set(usernameRef, { uid });
+      tx.set(phoneRef, { uid });
       tx.set(userRef, {
         uid,
         username,
         usernameLower,
         displayName,
+        birthDate,
+        phone,
         bio: "Привіт! Я користуюсь 100 ГРАМ 🥃",
         avatarColor: randomColor(),
         isPremium: false,
@@ -106,7 +133,7 @@ export async function registerUser(
       });
     });
   } catch (err) {
-    await cred.user.delete().catch(() => {});
+    await deleteUser(fbUser).catch(() => signOut(auth).catch(() => {}));
     if (err instanceof DataError) throw err;
     throw new DataError("Не вдалося завершити реєстрацію");
   }
@@ -114,27 +141,60 @@ export async function registerUser(
 }
 
 export async function loginUser(email: string, password: string): Promise<void> {
-  await signInWithEmailAndPassword(auth, email, password);
+  await signInWithEmailAndPassword(auth, email.trim(), password);
+}
+
+/** After a phone sign-in: a number that was never registered makes Firebase
+ * create a bare account with no profile - remove it and say so. */
+export async function requireProfileAfterPhoneLogin(): Promise<void> {
+  const fbUser = auth.currentUser;
+  if (!fbUser) return;
+  const has = await getDoc(doc(db, "users", fbUser.uid)).then((s) => s.exists()).catch(() => false);
+  if (!has) {
+    await deleteUser(fbUser).catch(() => signOut(auth).catch(() => {}));
+    throw new DataError("Акаунта з таким номером немає. Спочатку зареєструйся.");
+  }
+}
+
+/** Finds a user by phone number (exact match), for the "new chat" search. */
+export async function searchUserByPhone(phone: string, excludeUid: string): Promise<PublicUser | null> {
+  const snap = await getDoc(doc(db, "phones", phone)).catch(() => null);
+  if (!snap?.exists()) return null;
+  const uid = (snap.data() as { uid: string }).uid;
+  if (uid === excludeUid) return null;
+  const u = await getUserProfile(uid);
+  if (!u) return null;
+  return {
+    id: u.id,
+    username: u.username,
+    displayName: u.displayName,
+    bio: u.bio,
+    avatarColor: u.avatarColor,
+    avatarUrl: u.avatarUrl,
+    isPremium: u.isPremium,
+  };
+}
+
+/** Sets, changes or clears the phone on the signed-in account, keeping the
+ * unique `phones/{digits}` reservation in step with it. */
+export async function setMyPhone(uid: string, oldPhone: string | null, newPhone: string | null): Promise<void> {
+  if (oldPhone === newPhone) return;
+  await runTransaction(db, async (tx) => {
+    if (newPhone) {
+      const ref = doc(db, "phones", newPhone);
+      const snap = await tx.get(ref);
+      if (snap.exists() && (snap.data() as { uid: string }).uid !== uid) {
+        throw new DataError("Цей номер телефону вже використовується");
+      }
+      tx.set(ref, { uid });
+    }
+    if (oldPhone) tx.delete(doc(db, "phones", oldPhone));
+    tx.update(doc(db, "users", uid), { phone: newPhone });
+  });
 }
 
 export async function logoutUser(): Promise<void> {
   await signOut(auth);
-}
-
-/** Sends a reset-password email via Firebase Auth's default flow (its own
- * hosted reset page, no app-side handling needed). Swallows
- * auth/user-not-found so the caller can show the same "check your email"
- * message regardless of whether the address is registered - otherwise this
- * endpoint would let anyone probe which emails have an account. */
-export async function requestPasswordReset(email: string): Promise<void> {
-  try {
-    await sendPasswordResetEmail(auth, email);
-  } catch (err) {
-    const code = (err as { code?: string })?.code;
-    if (code === "auth/user-not-found") return;
-    if (code === "auth/invalid-email") throw new DataError("Некоректний email");
-    throw new DataError("Не вдалося надіслати лист - спробуй пізніше");
-  }
 }
 
 async function reauthenticate(currentPassword: string): Promise<void> {
@@ -160,14 +220,30 @@ export async function changePassword(currentPassword: string, newPassword: strin
  * and messages the account took part in are left in place - removing
  * them everywhere they're referenced is out of scope here - but the
  * username is freed up and the account itself is gone. */
-export async function deleteAccount(currentPassword: string, uid: string, usernameLower: string): Promise<void> {
+/** "Forgot the chat password": prove it's you with the account password,
+ * then wipe the chat lock (password + every locked/hidden flag). */
+export async function resetChatLockWithAccountPassword(currentPassword: string, uid: string): Promise<void> {
   await reauthenticate(currentPassword);
+  await clearChatLock(uid);
+}
+
+export async function deleteAccount(currentPassword: string, uid: string, usernameLower: string, phone?: string | null): Promise<void> {
+  await reauthenticate(currentPassword);
+  if (phone) await deleteDoc(doc(db, "phones", phone)).catch(() => {});
+  await clearChatLock(uid).catch(() => {});
   await deleteDoc(doc(db, "usernames", usernameLower)).catch(() => {});
   await deleteDoc(doc(db, "users", uid)).catch(() => {});
   await deleteUser(auth.currentUser!);
 }
 
 /* ---------------- users ---------------- */
+
+/** Premium lapses when its end date passes - the stored flag is never reset. */
+function isPremiumActive(d: Record<string, unknown>): boolean {
+  if (!d.isPremium) return false;
+  const until = d.premiumUntil;
+  return until instanceof Timestamp ? until.toDate() > new Date() : true;
+}
 
 function mapUser(snap: { id: string; data: () => Record<string, unknown> }): User {
   const d = snap.data();
@@ -178,10 +254,24 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     bio: (d.bio as string) ?? "",
     avatarColor: d.avatarColor as string,
     avatarUrl: (d.avatarUrl as string) ?? null,
-    isPremium: !!d.isPremium,
+    isPremium: isPremiumActive(d),
     premiumUntil: d.premiumUntil ? tsToIso(d.premiumUntil) : null,
     grams: (d.grams as number) ?? 0,
     mutedGlobally: !!d.mutedGlobally,
+    birthDate: (d.birthDate as string) ?? null,
+    emojiStatus: (d.emojiStatus as string) ?? null,
+    statusText: (d.statusText as string) ?? null,
+    nameColor: (d.nameColor as string) ?? null,
+    profileBanner: (d.profileBanner as string) ?? null,
+    phone: (d.phone as string) ?? null,
+    hideBirthDate: !!d.hideBirthDate,
+    lastSeenAt: d.lastSeenAt instanceof Timestamp ? d.lastSeenAt.toDate().toISOString() : null,
+    hideLastSeen: !!d.hideLastSeen,
+    mutedChats: (d.mutedChats as string[]) ?? [],
+    blockedUids: (d.blockedUids as string[]) ?? [],
+    pinnedChats: (d.pinnedChats as string[]) ?? [],
+    archivedChats: (d.archivedChats as string[]) ?? [],
+    hiddenChats: (d.hiddenChats as Record<string, string>) ?? {},
     badge: (d.badge as UserBadge) ?? null,
     showAdminBadge: !!d.showAdminBadge,
   };
@@ -195,7 +285,7 @@ export function subscribeUser(uid: string, cb: (user: User | null) => void) {
 
 export async function updateProfile(
   uid: string,
-  patch: { displayName?: string; bio?: string; avatarColor?: string; avatarUrl?: string | null; showAdminBadge?: boolean }
+  patch: { displayName?: string; bio?: string; avatarColor?: string; avatarUrl?: string | null; showAdminBadge?: boolean; birthDate?: string | null; hideBirthDate?: boolean; hideLastSeen?: boolean; emojiStatus?: string | null; statusText?: string | null; nameColor?: string | null; profileBanner?: string | null }
 ) {
   await updateDoc(doc(db, "users", uid), patch);
 }
@@ -267,13 +357,16 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
   const isGroup = !!d.isGroup;
   const isChannel = !!d.isChannel;
   const otherUid = memberUids.find((u) => u !== myUid);
-  const name = isGroup
+  const isSaved = !isGroup && snap.id === savedChatId(myUid);
+  const name = isSaved
+    ? "Збережене"
+    : isGroup
     ? (d.name as string) ?? (isChannel ? "Канал" : "Група")
     : otherUid
       ? profiles[otherUid]?.displayName ?? "Чат"
       : "Чат";
-  const avatarColor = isGroup ? (isChannel ? "#3d8fdb" : "#8774e1") : otherUid ? profiles[otherUid]?.avatarColor ?? "#999" : "#999";
-  const avatarUrl = isGroup ? null : otherUid ? profiles[otherUid]?.avatarUrl ?? null : null;
+  const avatarColor = isSaved ? "#8b6cf0" : isGroup ? (isChannel ? "#3d8fdb" : "#8774e1") : otherUid ? profiles[otherUid]?.avatarColor ?? "#999" : "#999";
+  const avatarUrl = isGroup ? (d.avatarUrl as string) ?? null : otherUid ? profiles[otherUid]?.avatarUrl ?? null : null;
   const rawLastMessage = d.lastMessage as { content: string; senderUid: string; createdAt: unknown } | undefined;
   const lastMessage = rawLastMessage
     ? {
@@ -286,6 +379,8 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
     id: snap.id,
     isGroup,
     isChannel,
+    isSaved,
+    description: (d.description as string) ?? null,
     name,
     avatarColor,
     avatarUrl,
@@ -301,8 +396,99 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
     adminUids: (d.adminUids as string[]) ?? [],
     mutedUids: (d.mutedUids as string[]) ?? [],
     lastMessage,
+    readBy: Object.fromEntries(
+      Object.entries((d.readBy as Record<string, unknown>) ?? {}).map(([uid, ts]) => [uid, tsToIso(ts)])
+    ),
     updatedAt: d.updatedAt ? tsToIso(d.updatedAt) : tsToIso(d.createdAt),
   };
+}
+
+/* ---------------- Saved messages + chat list prefs ---------------- */
+
+export function savedChatId(uid: string): string {
+  return "saved_" + uid;
+}
+
+/** Everyone's private "Saved messages" chat: a chat whose only member is
+ * its owner. Created lazily the first time it is opened. */
+export async function ensureSavedChat(me: User): Promise<string> {
+  const chatId = savedChatId(me.id);
+  const chatRef = doc(db, "chats", chatId);
+  const snap = await getDoc(chatRef);
+  if (!snap.exists()) {
+    await setDoc(chatRef, {
+      isGroup: false,
+      isChannel: false,
+      name: null,
+      memberUids: [me.id],
+      memberProfiles: { [me.id]: toMemberProfile(me) },
+      adminUids: [],
+      lastMessage: null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
+  return chatId;
+}
+
+export async function setChatPinned(uid: string, chatId: string, pinned: boolean): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { pinnedChats: pinned ? arrayUnion(chatId) : arrayRemove(chatId) });
+}
+
+/** Personal "do not disturb" for one chat (no sound), unlike the admin mute. */
+/** Marks the chat as read by this user up to now (server time). */
+export async function markChatRead(chatId: string, uid: string): Promise<void> {
+  await updateDoc(doc(db, "chats", chatId), new FieldPath("readBy", uid), serverTimestamp()).catch(() => {});
+}
+
+/** How many messages arrived after `sinceIso` (server-side count, cheap). */
+export async function countMessagesSince(chatId: string, sinceIso: string): Promise<number> {
+  const qy = query(collection(db, "chats", chatId, "messages"), where("createdAt", ">", Timestamp.fromDate(new Date(sinceIso))));
+  const snap = await getCountFromServer(qy);
+  return snap.data().count;
+}
+
+export async function setChatMutedForMe(uid: string, chatId: string, muted: boolean): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { mutedChats: muted ? arrayUnion(chatId) : arrayRemove(chatId) });
+}
+
+/** Soft block: the person's chat disappears from the list and stops making
+ * sounds. (Rules can't stop them from writing - it only mutes them for you.) */
+export async function setUserBlocked(uid: string, otherUid: string, blocked: boolean): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { blockedUids: blocked ? arrayUnion(otherUid) : arrayRemove(otherUid) });
+}
+
+/** Presence heartbeat - the timestamp other people's "last seen" is built from. */
+export async function touchLastSeen(uid: string): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { lastSeenAt: serverTimestamp() }).catch(() => {});
+}
+
+export async function requestPasswordReset(email: string): Promise<void> {
+  await sendPasswordResetEmail(auth, email.trim());
+}
+
+export async function setChatArchived(uid: string, chatId: string, archived: boolean): Promise<void> {
+  await updateDoc(doc(db, "users", uid), {
+    archivedChats: archived ? arrayUnion(chatId) : arrayRemove(chatId),
+    // archiving an already-pinned chat unpins it, like Telegram
+    ...(archived ? { pinnedChats: arrayRemove(chatId) } : {}),
+  });
+}
+
+/** "Delete" a chat for this user only: it disappears from their list until
+ * a newer message arrives. The other members' copy is untouched. */
+export async function hideChatForMe(uid: string, chatId: string): Promise<void> {
+  await updateDoc(doc(db, "users", uid), {
+    [`hiddenChats.${chatId}`]: new Date().toISOString(),
+    pinnedChats: arrayRemove(chatId),
+    archivedChats: arrayRemove(chatId),
+  });
+}
+
+/** Live profile of another user (avatar/name), so chat lists don't rely on
+ * the copy frozen into `memberProfiles` when the chat was created. */
+export function subscribePublicProfile(uid: string, cb: (u: User | null) => void) {
+  return onSnapshot(doc(db, "users", uid), (snap) => cb(snap.exists() ? mapUser(snap) : null));
 }
 
 export function subscribeChats(myUid: string, cb: (chats: ChatSummary[]) => void) {
@@ -441,6 +627,19 @@ export async function setChatAdmin(chatId: string, uid: string, makeAdmin: boole
 }
 
 /** Admin-only: renames a group/channel. */
+/** Admin-only: the group/channel photo and description. */
+export async function updateChatInfo(
+  chatId: string,
+  patch: { description?: string | null; avatarUrl?: string | null }
+): Promise<void> {
+  await updateDoc(doc(db, "chats", chatId), patch);
+}
+
+/** Leave a group or channel yourself (rules allow removing only your own uid). */
+export async function leaveChat(chatId: string, uid: string): Promise<void> {
+  await removeChatMember(chatId, uid);
+}
+
 export async function renameChat(chatId: string, name: string): Promise<void> {
   const trimmed = name.trim();
   if (!trimmed) throw new DataError("Вкажи назву");
@@ -469,44 +668,37 @@ function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, c
       username: (d.senderUsername as string) ?? "",
       displayName: d.senderDisplayName as string,
       avatarColor: d.senderAvatarColor as string,
+      emojiStatus: (d.senderEmojiStatus as string) ?? null,
+      nameColor: (d.senderNameColor as string) ?? null,
     },
+    reactions: (d.reactions as Record<string, string[]>) ?? {},
+    editedAt: d.editedAt instanceof Timestamp ? d.editedAt.toDate().toISOString() : null,
+    replyTo: (d.replyTo as ChatMessage["replyTo"]) ?? null,
+    forwardedFrom: (d.forwardedFrom as string) ?? null,
   };
 }
 
-const MESSAGES_PAGE_SIZE = 50;
-
-/** Live window of the MOST RECENT messages. Ordered desc so the Firestore
- * query cursor always tracks "the newest N" as new messages arrive - an
- * asc-ordered `limit()` would instead pin to "the oldest N ever sent" and
- * silently stop receiving anything once a chat passed that many messages. */
-export function subscribeMessages(chatId: string, cb: (messages: ChatMessage[], hasMore: boolean) => void) {
-  const qy = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc"), limit(MESSAGES_PAGE_SIZE));
+/** Live view of the newest `count` messages (oldest first). Raise `count`
+ * to reveal older history. */
+export function subscribeMessages(chatId: string, cb: (messages: ChatMessage[]) => void, count = 60) {
+  const qy = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc"), limit(count));
   return onSnapshot(qy, (snap) => {
-    cb(snap.docs.map((d) => mapMessage(d, chatId)).reverse(), snap.docs.length === MESSAGES_PAGE_SIZE);
+    cb(snap.docs.map((d) => mapMessage(d, chatId)).reverse());
   });
 }
 
-/** One-shot fetch of the page of messages just older than `beforeIso`, for
- * a "load older" button - history further back than the live window doesn't
- * need to be a live listener. */
-export async function loadOlderMessages(
-  chatId: string,
-  beforeIso: string
-): Promise<{ messages: ChatMessage[]; hasMore: boolean }> {
-  const qy = query(
-    collection(db, "chats", chatId, "messages"),
-    orderBy("createdAt", "desc"),
-    startAfter(Timestamp.fromDate(new Date(beforeIso))),
-    limit(MESSAGES_PAGE_SIZE)
-  );
-  const snap = await getDocs(qy);
-  return {
-    messages: snap.docs.map((d) => mapMessage(d, chatId)).reverse(),
-    hasMore: snap.docs.length === MESSAGES_PAGE_SIZE,
-  };
+export interface SendExtras {
+  replyTo?: ChatMessage["replyTo"];
+  forwardedFrom?: string | null;
 }
 
-export async function sendMessage(chatId: string, sender: User, content: string, type: "text" | "image" = "text") {
+export async function sendMessage(
+  chatId: string,
+  sender: User,
+  content: string,
+  type: "text" | "image" = "text",
+  extras: SendExtras = {}
+) {
   const chatRef = doc(db, "chats", chatId);
   const msgRef = doc(collection(chatRef, "messages"));
   const createdAt = serverTimestamp();
@@ -516,14 +708,63 @@ export async function sendMessage(chatId: string, sender: User, content: string,
     senderUsername: sender.username,
     senderDisplayName: sender.displayName,
     senderAvatarColor: sender.avatarColor,
+    // premium cosmetics travel with the message so group chats can show them
+    ...(sender.isPremium && sender.emojiStatus ? { senderEmojiStatus: sender.emojiStatus } : {}),
+    ...(sender.isPremium && sender.nameColor ? { senderNameColor: sender.nameColor } : {}),
     content,
     type,
     createdAt,
+    ...(extras.replyTo ? { replyTo: extras.replyTo } : {}),
+    ...(extras.forwardedFrom ? { forwardedFrom: extras.forwardedFrom } : {}),
   });
   batch.update(chatRef, {
     updatedAt: createdAt,
     lastMessage: { content: type === "image" ? "📷 Фото" : content, senderUid: sender.id, createdAt },
+    // sending counts as reading up to this message (keeps unread counts right)
+    [`readBy.${sender.id}`]: createdAt,
   });
+  await batch.commit();
+}
+
+/** Adds/removes the user's reaction on a message. `current` is the emoji this
+ * user already has on it; when they are at their per-message limit the oldest
+ * one is swapped out (Telegram behaviour with a single free reaction). */
+export async function toggleReaction(
+  chatId: string,
+  messageId: string,
+  uid: string,
+  emoji: string,
+  mine: string[],
+  limitPerMessage: number
+): Promise<void> {
+  const ref = doc(db, "chats", chatId, "messages", messageId);
+  if (mine.includes(emoji)) {
+    await updateDoc(ref, new FieldPath("reactions", emoji), arrayRemove(uid));
+    return;
+  }
+  const args: unknown[] = [new FieldPath("reactions", emoji), arrayUnion(uid)];
+  if (mine.length >= limitPerMessage) {
+    args.push(new FieldPath("reactions", mine[0]), arrayRemove(uid));
+  }
+  await (updateDoc as (r: unknown, ...a: unknown[]) => Promise<void>)(ref, ...args);
+}
+
+/** Edits the text of one of your own messages. If it is the newest message
+ * of the chat, the list preview is refreshed too. */
+export async function editMessage(
+  chatId: string,
+  message: { id: string; createdAt: string; senderId: string },
+  content: string,
+  isLast: boolean
+): Promise<void> {
+  const chatRef = doc(db, "chats", chatId);
+  const batch = writeBatch(db);
+  batch.update(doc(chatRef, "messages", message.id), { content, editedAt: serverTimestamp() });
+  if (isLast) {
+    batch.update(chatRef, {
+      lastMessage: { content, senderUid: message.senderId, createdAt: Timestamp.fromDate(new Date(message.createdAt)) },
+    });
+  }
   await batch.commit();
 }
 

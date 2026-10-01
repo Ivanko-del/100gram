@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import type { User as FirebaseAuthUser } from "firebase/auth";
-import { DataError, loginUser, logoutUser, registerUser, requestPasswordReset, subscribeUser, watchAuth } from "../data/firestore-api";
+import { DataError, loginUser, logoutUser, subscribeUser, touchLastSeen, watchAuth } from "../data/firestore-api";
 import { User } from "../types";
+import { enforceFreeTier } from "../utils/prefs";
 
 interface AuthContextValue {
   user: User | null;
@@ -9,9 +10,7 @@ interface AuthContextValue {
   loading: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
-  register: (username: string, email: string, password: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
-  resetPassword: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -52,9 +51,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, []);
 
+  // "Last seen": ping while the app is open and visible
+  useEffect(() => {
+    if (!uid) return;
+    const ping = () => {
+      if (document.visibilityState === "visible") touchLastSeen(uid);
+    };
+    ping();
+    const timer = window.setInterval(ping, 60_000);
+    document.addEventListener("visibilitychange", ping);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", ping);
+    };
+  }, [uid]);
+
   useEffect(() => {
     if (!uid) return;
     const unsub = subscribeUser(uid, (u) => {
+      if (u && !u.isPremium) enforceFreeTier();
       setUser(u);
       setLoading(false);
     });
@@ -71,33 +86,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const register = useCallback(async (username: string, email: string, password: string, displayName: string) => {
-    setError(null);
-    try {
-      await registerUser(username, email, password, displayName);
-    } catch (e) {
-      setError(errMsg(e, "Помилка реєстрації"));
-      throw e;
-    }
-  }, []);
-
   const logout = useCallback(async () => {
     await logoutUser();
   }, []);
 
-  const resetPassword = useCallback(async (email: string) => {
-    setError(null);
-    try {
-      await requestPasswordReset(email);
-    } catch (e) {
-      setError(errMsg(e, "Не вдалося надіслати лист"));
-      throw e;
-    }
-  }, []);
-
   const value = useMemo(
-    () => ({ user, uid, loading, error, login, register, logout, resetPassword }),
-    [user, uid, loading, error, login, register, logout, resetPassword]
+    () => ({ user, uid, loading, error, login, logout }),
+    [user, uid, loading, error, login, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

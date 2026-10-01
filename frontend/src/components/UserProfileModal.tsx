@@ -1,10 +1,11 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getUserProfile, setGlobalMute, setUserBadge, startDirectChat } from "../data/firestore-api";
+import { getUserProfile, setGlobalMute, setUserBadge, startDirectChat, setUserBlocked } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
-import { BADGE_COLORS, isSiteAdmin } from "../constants";
+import { BADGE_COLORS, PROFILE_BANNERS, isSiteAdmin } from "../constants";
 import { User } from "../types";
 import Avatar from "./Avatar";
+import UserName from "./UserName";
 
 interface Props {
   uid: string;
@@ -99,9 +100,19 @@ export default function UserProfileModal({ uid, onClose }: Props) {
 
         {profile && (
           <>
-            <div className="profile-card-identity">
+            {profile.isPremium && profile.profileBanner && PROFILE_BANNERS[profile.profileBanner] && (
+              <div className="profile-banner" style={{ background: PROFILE_BANNERS[profile.profileBanner] }} />
+            )}
+            <div className={`profile-card-identity ${profile.isPremium && profile.profileBanner ? "with-banner" : ""}`}>
               <Avatar name={profile.displayName} color={profile.avatarColor} photoUrl={profile.avatarUrl} size={72} isPremium={profile.isPremium} />
-              <div className="settings-profile-name">{profile.displayName}</div>
+              <div className="settings-profile-name">
+                <UserName
+                  name={profile.displayName}
+                  emoji={profile.isPremium ? profile.emojiStatus : null}
+                  color={profile.isPremium ? profile.nameColor : null}
+                />
+              </div>
+              {profile.isPremium && profile.statusText && <div className="profile-status-text">{profile.statusText}</div>}
               <div className="settings-profile-username">@{profile.username}</div>
               <div className="profile-badges">
                 {profile.isPremium && (
@@ -120,10 +131,21 @@ export default function UserProfileModal({ uid, onClose }: Props) {
             </div>
 
             {profile.bio && <p className="profile-card-bio">{profile.bio}</p>}
+            {profile.birthDate && (isSelf || !profile.hideBirthDate) && (
+              <p className="profile-card-bio">🎂 {new Date(profile.birthDate + "T00:00:00").toLocaleDateString("uk-UA", { day: "numeric", month: "long", year: "numeric" })}</p>
+            )}
 
             {!isSelf && (
               <button className="btn-primary" onClick={message} disabled={starting}>
                 {starting ? "Відкриття…" : "✉️ Написати повідомлення"}
+              </button>
+            )}
+            {!isSelf && me && (
+              <button
+                className="btn-ghost"
+                onClick={() => setUserBlocked(me.id, profile.id, !(me.blockedUids ?? []).includes(profile.id))}
+              >
+                {(me.blockedUids ?? []).includes(profile.id) ? "✅ Розблокувати" : "🚫 Заблокувати"}
               </button>
             )}
 

@@ -1,12 +1,16 @@
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   DataError,
   buyPremium,
   changePassword,
   deleteAccount,
   getCurrentEmail,
+  getUserProfile,
   grantPremiumFromAxioma,
+  setUserBlocked,
+  resetChatLockWithAccountPassword,
+  setMyPhone,
   searchUsers,
   startDirectChat,
   subscribeTransactions,
@@ -19,13 +23,52 @@ import { useAxioma } from "../hooks/useAxioma";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import { compressImageToDataUrl } from "../utils/image";
 import { isSoundEnabled, playNotificationSound, setSoundEnabled } from "../utils/sound";
-import { AVATAR_COLORS, PREMIUM_PLANS, SITE_ADMIN_USERNAME, isSiteAdmin } from "../constants";
+import {
+  AVATAR_COLORS,
+  FREE_BIO_LIMIT,
+  FREE_PIN_LIMIT,
+  NAME_COLORS,
+  PROFILE_BANNERS,
+  STATUS_EMOJIS,
+  STATUS_TEXT_LIMIT,
+  PREMIUM_AVATAR_COLORS,
+  PREMIUM_BIO_LIMIT,
+  PREMIUM_PIN_LIMIT,
+  PREMIUM_REACTIONS_PER_MESSAGE,
+  FREE_REACTIONS_PER_MESSAGE,
+  PREMIUM_PLANS, SITE_ADMIN_USERNAME, isSiteAdmin } from "../constants";
 import { PremiumPlan, PublicUser, User, WalletTransaction } from "../types";
 import Avatar from "../components/Avatar";
 import AxiomaCard from "../components/AxiomaCard";
 import UserProfileModal from "../components/UserProfileModal";
+import { formatPhone, normalizePhone } from "../utils/phone";
+import type { ConfirmationResult } from "firebase/auth";
+import { auth } from "../firebase";
+import { isPhoneVerified, phoneAuthError, sendLinkCode, unlinkPhone } from "../data/phone-auth";
+import SmsCodeStep from "../components/SmsCodeStep";
+import LockPrompt from "../components/LockPrompt";
+import LockSetupModal from "../components/LockSetupModal";
+import { clearChatLock } from "../data/chat-lock";
+import { useChatLock } from "../context/ChatLockContext";
+import {
+  Accent,
+  ChatBackground,
+  PREMIUM_ACCENTS,
+  PREMIUM_BACKGROUNDS,
+  getAccent,
+  setAccent,
+  FontSize,
+  getChatBackground,
+  getFontSize,
+  isCompactList,
+  isEnterSends,
+  setChatBackground,
+  setCompactList,
+  setEnterSends,
+  setFontSize,
+} from "../utils/prefs";
 
-type Tab = "profile" | "wallet" | "premium" | "appearance" | "account";
+type Tab = "profile" | "appearance" | "chats" | "privacy" | "wallet" | "premium" | "account";
 
 interface TabProps {
   user: User;
@@ -33,9 +76,12 @@ interface TabProps {
 
 export default function SettingsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useAuth();
-  const [tab, setTab] = useState<Tab>("profile");
-  const [tabOpened, setTabOpened] = useState(false);
+  // The chat-list drawer can deep-link straight into a tab (wallet, premium)
+  const initialTab = (location.state as { tab?: Tab } | null)?.tab;
+  const [tab, setTab] = useState<Tab>(initialTab ?? "profile");
+  const [tabOpened, setTabOpened] = useState(!!initialTab);
   const [showOwnProfile, setShowOwnProfile] = useState(false);
 
   if (!user) return null;
@@ -65,6 +111,13 @@ export default function SettingsPage() {
           <button className={tab === "appearance" ? "active" : ""} onClick={() => openTab("appearance")}>
             🎨 Вигляд
           </button>
+          <button className={tab === "chats" ? "active" : ""} onClick={() => openTab("chats")}>
+            💬 Чати і сповіщення
+          </button>
+          <button className={tab === "privacy" ? "active" : ""} onClick={() => openTab("privacy")}>
+            🛡️ Конфіденційність
+          </button>
+          <div className="settings-nav-divider">Гаманець і підписка</div>
           <button className={tab === "wallet" ? "active" : ""} onClick={() => openTab("wallet")}>
             🥃 Гаманець · {user.grams} ГРАМ
           </button>
@@ -85,7 +138,9 @@ export default function SettingsPage() {
           ← Налаштування
         </button>
         {tab === "profile" && <ProfileTab user={user} />}
-        {tab === "appearance" && <AppearanceTab />}
+        {tab === "appearance" && <AppearanceTab user={user} />}
+        {tab === "chats" && <ChatsTab />}
+        {tab === "privacy" && <PrivacyTab user={user} />}
         {tab === "wallet" && <WalletTab user={user} />}
         {tab === "premium" && <PremiumTab user={user} />}
         {tab === "account" && <AccountTab user={user} />}
@@ -97,6 +152,7 @@ export default function SettingsPage() {
 function ProfileTab({ user }: TabProps) {
   const [displayName, setDisplayName] = useState(user.displayName);
   const [bio, setBio] = useState(user.bio);
+  const [birthDate, setBirthDate] = useState(user.birthDate ?? "");
   const [avatarColor, setAvatarColor] = useState(user.avatarColor);
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? null);
   const [saving, setSaving] = useState(false);
@@ -104,6 +160,31 @@ function ProfileTab({ user }: TabProps) {
   const [error, setError] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [emojiStatus, setEmojiStatus] = useState(user.emojiStatus ?? "");
+  const [statusText, setStatusText] = useState(user.statusText ?? "");
+  const [nameColor, setNameColor] = useState(user.nameColor ?? "");
+  const [banner, setBanner] = useState(user.profileBanner ?? "");
+  const [gifUrl, setGifUrl] = useState("");
+  const [premiumHint, setPremiumHint] = useState(false);
+
+  async function applyGifAvatar() {
+    const url = gifUrl.trim();
+    if (!/^https:\/\/\S+$/i.test(url)) {
+      setPhotoError("Встав пряме посилання на картинку чи GIF, що починається з https://");
+      return;
+    }
+    setPhotoError(null);
+    setUploadingPhoto(true);
+    try {
+      await updateProfile(user.id, { avatarUrl: url });
+      setAvatarUrl(url);
+      setGifUrl("");
+    } catch {
+      setPhotoError("Не вдалося встановити аватарку");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
@@ -111,11 +192,25 @@ function ProfileTab({ user }: TabProps) {
     setError(null);
     setSaved(false);
     try {
-      await updateProfile(user.id, { displayName, bio, avatarColor });
+      await updateProfile(user.id, {
+        displayName,
+        bio,
+        avatarColor,
+        birthDate: birthDate || null,
+        // premium cosmetics are only written for active premium accounts
+        ...(user.isPremium
+          ? {
+              emojiStatus: emojiStatus || null,
+              statusText: statusText.trim() || null,
+              nameColor: nameColor || null,
+              profileBanner: banner || null,
+            }
+          : {}),
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch {
-      setError("Не вдалося зберегти");
+    } catch (e2) {
+      setError(e2 instanceof DataError ? e2.message : "Не вдалося зберегти");
     } finally {
       setSaving(false);
     }
@@ -177,7 +272,17 @@ function ProfileTab({ user }: TabProps) {
       </label>
       <label>
         Про себе
-        <textarea value={bio} onChange={(e) => setBio(e.target.value)} maxLength={160} rows={3} />
+        <textarea
+          value={bio}
+          onChange={(e) => setBio(e.target.value)}
+          maxLength={user.isPremium ? PREMIUM_BIO_LIMIT : FREE_BIO_LIMIT}
+          rows={3}
+        />
+        {!user.isPremium && <span className="settings-hint">З преміумом — до {PREMIUM_BIO_LIMIT} символів</span>}
+      </label>
+      <label>
+        Дата народження <span className="settings-hint">(необов'язково)</span>
+        <input type="date" value={birthDate} min="1900-01-01" max={new Date().toISOString().slice(0, 10)} onChange={(e) => setBirthDate(e.target.value)} />
       </label>
       <label>Колір аватара {avatarUrl && <span className="settings-hint">(видно, коли немає фото)</span>}</label>
       <div className="color-swatches">
@@ -190,7 +295,92 @@ function ProfileTab({ user }: TabProps) {
             onClick={() => setAvatarColor(c)}
           />
         ))}
+        {PREMIUM_AVATAR_COLORS.map((c) => {
+          const locked = !user.isPremium && c !== avatarColor;
+          return (
+            <button
+              type="button"
+              key={c}
+              className={`swatch ${avatarColor === c ? "selected" : ""} ${locked ? "swatch-locked" : ""}`}
+              style={{ backgroundColor: c }}
+              title={locked ? "Ексклюзивний колір — потрібен преміум" : undefined}
+              onClick={() => (locked ? setError("Цей колір доступний із преміумом ⭐") : setAvatarColor(c))}
+            >
+              {locked ? "🔒" : ""}
+            </button>
+          );
+        })}
       </div>
+
+      <h3>Преміум-оформлення ⭐</h3>
+      {!user.isPremium && (
+        <p className="settings-hint">
+          Статус-емодзі, колір імені, банер профілю та анімована аватарка доступні з преміумом — дивись вкладку «Преміум».
+        </p>
+      )}
+      <fieldset className="premium-fieldset" disabled={!user.isPremium}>
+        <label>Емодзі-статус біля імені</label>
+        <div className="emoji-grid">
+          <button type="button" className={`emoji-cell ${!emojiStatus ? "selected" : ""}`} onClick={() => setEmojiStatus("")}>
+            ∅
+          </button>
+          {STATUS_EMOJIS.map((e) => (
+            <button type="button" key={e} className={`emoji-cell ${emojiStatus === e ? "selected" : ""}`} onClick={() => setEmojiStatus(e)}>
+              {e}
+            </button>
+          ))}
+        </div>
+
+        <label>
+          Текст статусу <span className="settings-hint">(показується в шапці приватного чату замість «в мережі»)</span>
+          <input value={statusText} onChange={(e) => setStatusText(e.target.value)} maxLength={STATUS_TEXT_LIMIT} placeholder="Наприклад: на зв'язку після 18:00" />
+        </label>
+
+        <label>Колір імені в чатах</label>
+        <div className="color-swatches">
+          <button type="button" className={`swatch swatch-none ${!nameColor ? "selected" : ""}`} onClick={() => setNameColor("")}>
+            ∅
+          </button>
+          {NAME_COLORS.map((c) => (
+            <button
+              type="button"
+              key={c}
+              className={`swatch ${nameColor === c ? "selected" : ""}`}
+              style={{ backgroundColor: c }}
+              onClick={() => setNameColor(c)}
+            />
+          ))}
+        </div>
+
+        <label>Банер профілю</label>
+        <div className="banner-grid">
+          <button type="button" className={`banner-cell banner-none ${!banner ? "selected" : ""}`} onClick={() => setBanner("")}>
+            Без банера
+          </button>
+          {Object.entries(PROFILE_BANNERS).map(([id, bg]) => (
+            <button
+              type="button"
+              key={id}
+              className={`banner-cell ${banner === id ? "selected" : ""}`}
+              style={{ background: bg }}
+              aria-label={id}
+              onClick={() => setBanner(id)}
+            />
+          ))}
+        </div>
+      </fieldset>
+
+      {user.isPremium && (
+        <>
+          <label>
+            Анімована аватарка (GIF за посиланням)
+            <input value={gifUrl} onChange={(e) => setGifUrl(e.target.value)} placeholder="https://…/avatar.gif" />
+          </label>
+          <button type="button" className="btn-ghost" disabled={uploadingPhoto || !gifUrl.trim()} onClick={applyGifAvatar}>
+            Поставити як аватарку
+          </button>
+        </>
+      )}
       {error && <div className="auth-error">{error}</div>}
       <button className="btn-primary" type="submit" disabled={saving}>
         {saving ? "Збереження…" : saved ? "Збережено ✓" : "Зберегти"}
@@ -199,22 +389,19 @@ function ProfileTab({ user }: TabProps) {
   );
 }
 
-function AppearanceTab() {
+function AppearanceTab({ user }: TabProps) {
   const [theme, setTheme] = useState<string>(() => localStorage.getItem("stogram_theme") ?? "dark");
-  const [soundOn, setSoundOn] = useState(isSoundEnabled);
+  const [font, setFont] = useState<FontSize>(getFontSize);
+  const [bg, setBg] = useState<ChatBackground>(getChatBackground);
+  const [compact, setCompact] = useState(isCompactList);
+  const [accent, setAccentState] = useState<Accent>(getAccent);
+  const [premiumHint, setPremiumHint] = useState(false);
   const { installed, canPromptInstall, promptInstall, isIos, isAndroid } = useInstallPrompt();
 
   function applyTheme(next: string) {
     setTheme(next);
     localStorage.setItem("stogram_theme", next);
     document.documentElement.dataset.theme = next;
-  }
-
-  function toggleSound() {
-    const next = !soundOn;
-    setSoundOn(next);
-    setSoundEnabled(next);
-    if (next) playNotificationSound();
   }
 
   return (
@@ -230,10 +417,86 @@ function AppearanceTab() {
         </button>
       </div>
 
-      <h3>Сповіщення</h3>
+      <h3>Розмір тексту в чаті</h3>
+      <div className="theme-options">
+        {(["s", "m", "l"] as FontSize[]).map((f) => (
+          <button
+            key={f}
+            className={`theme-card ${font === f ? "selected" : ""}`}
+            onClick={() => {
+              setFont(f);
+              setFontSize(f);
+            }}
+          >
+            <span style={{ fontSize: f === "s" ? 13 : f === "m" ? 16 : 20 }}>Аа</span>
+          </button>
+        ))}
+      </div>
+
+      <h3>Акцентний колір ⭐</h3>
+      <div className="color-swatches">
+        {(["purple", "blue", "green", "orange", "pink", "red"] as Accent[]).map((a) => {
+          const locked = !user.isPremium && PREMIUM_ACCENTS.includes(a);
+          return (
+            <button
+              type="button"
+              key={a}
+              className={`swatch accent-swatch accent-${a} ${accent === a ? "selected" : ""} ${locked ? "swatch-locked" : ""}`}
+              aria-label={a}
+              onClick={() => {
+                if (locked) return setPremiumHint(true);
+                setPremiumHint(false);
+                setAccentState(a);
+                setAccent(a);
+              }}
+            >
+              {locked ? "🔒" : ""}
+            </button>
+          );
+        })}
+      </div>
+
+      <h3>Фон чату</h3>
+      <div className="theme-options theme-options-wrap">
+        {(
+          [
+            ["aurora", "🌌 Градієнт"],
+            ["dots", "⋯ Візерунок"],
+            ["plain", "▫️ Простий"],
+            ["sunset", "🌅 Захід ⭐"],
+            ["ocean", "🌊 Океан ⭐"],
+            ["forest", "🌲 Ліс ⭐"],
+          ] as [ChatBackground, string][]
+        ).map(([id, label]) => {
+          const locked = !user.isPremium && PREMIUM_BACKGROUNDS.includes(id);
+          return (
+            <button
+              key={id}
+              className={`theme-card ${bg === id ? "selected" : ""} ${locked ? "theme-card-locked" : ""}`}
+              onClick={() => {
+                if (locked) return setPremiumHint(true);
+                setPremiumHint(false);
+                setBg(id);
+                setChatBackground(id);
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      {premiumHint && <p className="settings-hint">Ці варіанти доступні з преміумом — дивись вкладку «Преміум» ⭐</p>}
+
       <label className="switch-row">
-        <span>🔔 Звук при новому повідомленні</span>
-        <input type="checkbox" checked={soundOn} onChange={toggleSound} />
+        <span>📋 Компактний список чатів</span>
+        <input
+          type="checkbox"
+          checked={compact}
+          onChange={(e) => {
+            setCompact(e.target.checked);
+            setCompactList(e.target.checked);
+          }}
+        />
       </label>
 
       <h3>Застосунок на телефон і ПК</h3>
@@ -278,10 +541,251 @@ function AppearanceTab() {
   );
 }
 
+function ChatsTab() {
+  const [soundOn, setSoundOn] = useState(isSoundEnabled);
+  const [enterSends, setEnterSendsState] = useState(isEnterSends);
+
+  function toggleSound() {
+    const next = !soundOn;
+    setSoundOn(next);
+    setSoundEnabled(next);
+    if (next) playNotificationSound();
+  }
+
+  return (
+    <div className="settings-panel">
+      <h2>Чати і сповіщення</h2>
+
+      <h3>Сповіщення</h3>
+      <label className="switch-row">
+        <span>🔔 Звук при новому повідомленні</span>
+        <input type="checkbox" checked={soundOn} onChange={toggleSound} />
+      </label>
+
+      <h3>Надсилання</h3>
+      <label className="switch-row">
+        <span>⏎ Enter надсилає повідомлення</span>
+        <input
+          type="checkbox"
+          checked={enterSends}
+          onChange={(e) => {
+            setEnterSendsState(e.target.checked);
+            setEnterSends(e.target.checked);
+          }}
+        />
+      </label>
+      <p className="settings-hint">
+        {enterSends
+          ? "Shift+Enter — новий рядок. Надіслати можна й кнопкою."
+          : "Enter — новий рядок, надсилати треба кнопкою ➤."}
+      </p>
+
+      <h3>Керування чатами</h3>
+      <p className="settings-hint">
+        Утримуй чат у списку (на ПК — права кнопка миші), щоб закріпити його, відправити в архів або видалити. Архів
+        ховається над списком — потягни список вниз, щоб його відкрити. «Збережене» знайдеш у меню ☰.
+      </p>
+    </div>
+  );
+}
+
+function PrivacyTab({ user }: TabProps) {
+  const [hideBirth, setHideBirth] = useState(!!user.hideBirthDate);
+  const [error, setError] = useState<string | null>(null);
+
+  async function toggleBirth(next: boolean) {
+    setHideBirth(next);
+    setError(null);
+    try {
+      await updateProfile(user.id, { hideBirthDate: next });
+    } catch {
+      setHideBirth(!next);
+      setError("Не вдалося зберегти");
+    }
+  }
+
+  return (
+    <div className="settings-panel">
+      <h2>Конфіденційність</h2>
+      <label className="switch-row">
+        <span>🎂 Ховати дату народження від інших</span>
+        <input type="checkbox" checked={hideBirth} onChange={(e) => toggleBirth(e.target.checked)} />
+      </label>
+      <p className="settings-hint">
+        Дату народження (якщо вказана) бачать усі в твоєму профілі. Увімкни, щоб вона лишалась тільки в тебе.
+      </p>
+      <label className="switch-row">
+        <span>🕒 Ховати, коли я був(ла) в мережі</span>
+        <input
+          type="checkbox"
+          checked={!!user.hideLastSeen}
+          onChange={(e) => updateProfile(user.id, { hideLastSeen: e.target.checked }).catch(() => setError("Не вдалося зберегти"))}
+        />
+      </label>
+      <p className="settings-hint">Замість точного часу співрозмовники бачитимуть «був(ла) нещодавно».</p>
+      {error && <div className="auth-error">{error}</div>}
+
+      <BlockedUsers user={user} />
+
+      <ChatLockSettings user={user} />
+    </div>
+  );
+}
+
+function BlockedUsers({ user }: TabProps) {
+  const [people, setPeople] = useState<User[]>([]);
+  const key = (user.blockedUids ?? []).join(",");
+
+  useEffect(() => {
+    let cancelled = false;
+    const uids = key ? key.split(",") : [];
+    Promise.all(uids.map((u) => getUserProfile(u))).then((res) => {
+      if (!cancelled) setPeople(res.filter((p): p is User => !!p));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+
+  return (
+    <>
+      <h3>Заблоковані</h3>
+      {people.length === 0 ? (
+        <p className="settings-hint">Нікого не заблоковано. Заблокувати можна в профілі людини.</p>
+      ) : (
+        people.map((p) => (
+          <div key={p.id} className="switch-row">
+            <span>
+              {p.displayName} <span className="settings-hint">@{p.username}</span>
+            </span>
+            <button type="button" className="btn-ghost" onClick={() => setUserBlocked(user.id, p.id, false)}>
+              Розблокувати
+            </button>
+          </div>
+        ))
+      )}
+    </>
+  );
+}
+
+function ChatLockSettings({ user }: TabProps) {
+  const { hasPassword, unlocked, lock, lockNow } = useChatLock();
+  const [setup, setSetup] = useState(false);
+  const [gate, setGate] = useState<null | "change" | "remove">(null);
+  const [showReset, setShowReset] = useState(false);
+  const [accountPw, setAccountPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  // after the correct password is typed, run the action that was waiting
+  useEffect(() => {
+    if (!gate || !unlocked) return;
+    if (gate === "change") setSetup(true);
+    if (gate === "remove") {
+      setBusy(true);
+      clearChatLock(user.id)
+        .then(() => setNote("Пароль прибрано, усі чати знову видимі"))
+        .catch(() => setError("Не вдалося прибрати пароль"))
+        .finally(() => setBusy(false));
+    }
+    setGate(null);
+  }, [gate, unlocked, user.id]);
+
+  async function reset() {
+    setBusy(true);
+    setError(null);
+    try {
+      await resetChatLockWithAccountPassword(accountPw, user.id);
+      setShowReset(false);
+      setAccountPw("");
+      setNote("Пароль скинуто. Заблоковані й приховані чати знову звичайні");
+    } catch (e) {
+      setError(e instanceof DataError ? e.message : "Не вдалося скинути пароль");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <h3>Пароль на чати</h3>
+      <p className="settings-hint">
+        Заблокований чат відкривається лише за паролем, прихований зникає зі списку й лежить у меню ☰ → «Приховані
+        чати». Утримуй чат у списку, щоб заблокувати чи приховати. Це захист від сторонніх очей у застосунку, а не
+        шифрування повідомлень.
+      </p>
+      <p className="settings-hint">
+        {hasPassword
+          ? `Пароль задано · заблоковано: ${lock.locked.length} · приховано: ${lock.hidden.length}`
+          : "Пароль ще не задано — з'явиться, коли вперше заблокуєш чи приховаєш чат."}
+      </p>
+      {note && <div className="auth-success">{note}</div>}
+      {error && <div className="auth-error">{error}</div>}
+
+      <div className="phone-section-actions">
+        <button
+          type="button"
+          className="btn-ghost"
+          disabled={busy}
+          onClick={() => (hasPassword && !unlocked ? setGate("change") : setSetup(true))}
+        >
+          {hasPassword ? "Змінити пароль" : "Задати пароль"}
+        </button>
+        {hasPassword && (
+          <>
+            <button type="button" className="btn-ghost" disabled={busy} onClick={() => setGate("remove")}>
+              Прибрати пароль
+            </button>
+            {unlocked && (
+              <button type="button" className="btn-ghost" onClick={lockNow}>
+                Заблокувати зараз
+              </button>
+            )}
+            <button type="button" className="btn-ghost" onClick={() => setShowReset((v) => !v)}>
+              Забув пароль
+            </button>
+          </>
+        )}
+      </div>
+
+      {showReset && (
+        <div className="phone-section">
+          <p className="settings-hint">
+            Введи пароль від акаунта, щоб скинути пароль на чати. Усі блокування й приховування буде знято.
+          </p>
+          <input type="password" value={accountPw} onChange={(e) => setAccountPw(e.target.value)} placeholder="Пароль акаунта" />
+          <button type="button" className="btn-primary" disabled={busy || !accountPw} onClick={reset}>
+            Скинути
+          </button>
+        </div>
+      )}
+
+      {gate && !unlocked && (
+        <div className="modal-overlay" onClick={() => setGate(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <LockPrompt onCancel={() => setGate(null)} />
+          </div>
+        </div>
+      )}
+      {setup && (
+        <LockSetupModal
+          onClose={() => setSetup(false)}
+          onDone={() => {
+            setSetup(false);
+            setNote("Пароль збережено");
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 const TRANSFER_PRESETS = [10, 50, 100, 250];
 
 function WalletTab({ user }: TabProps) {
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [recipient, setRecipient] = useState<PublicUser | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PublicUser[]>([]);
@@ -433,10 +937,13 @@ function WalletTab({ user }: TabProps) {
 
       <AxiomaCard user={user} />
 
-      <h3>Історія</h3>
+      <button type="button" className="history-toggle" onClick={() => setHistoryOpen((v) => !v)} aria-expanded={historyOpen}>
+        <span>Історія{transactions.length > 0 ? ` · ${transactions.length}` : ""}</span>
+        <span className={`history-chevron ${historyOpen ? "open" : ""}`}>▾</span>
+      </button>
       <div className="tx-list">
-        {transactions.length === 0 && <div className="empty-hint">Ще немає транзакцій</div>}
-        {transactions.map((t) => (
+        {historyOpen && transactions.length === 0 && <div className="empty-hint">Ще немає транзакцій</div>}
+        {(historyOpen ? transactions : []).map((t) => (
           <div key={t.id} className="tx-row">
             <div className="tx-icon">
               {t.type === "premium_purchase" || t.type === "premium_purchase_axioma"
@@ -521,11 +1028,16 @@ function PremiumTab({ user }: TabProps) {
       </div>
 
       <ul className="premium-features">
-        <li>🚀 Швидша доставка повідомлень</li>
-        <li>⭐ Значок преміум біля імені</li>
-        <li>🎨 Ексклюзивні кольори аватара</li>
-        <li>📎 Більший ліміт повідомлень</li>
-        <li>🥃 +10% бонус до подарункових ГРАМів</li>
+        <li>⭐ Золота рамка й зірка на аватарці — тебе видно в кожному чаті</li>
+        <li>🎨 5 акцентних кольорів інтерфейсу замість одного</li>
+        <li>🌅 Преміум-фони чату: захід, океан, ліс</li>
+        <li>📌 До {PREMIUM_PIN_LIMIT} закріплених чатів (у безкоштовних — {FREE_PIN_LIMIT})</li>
+        <li>😎 Емодзі-статус біля імені й текст статусу</li>
+        <li>🌈 Колір імені та градієнтний банер профілю</li>
+        <li>🎞 Анімована GIF-аватарка</li>
+        <li>💬 Реакції на повідомлення: 14 ексклюзивних і до {PREMIUM_REACTIONS_PER_MESSAGE} на повідомлення (замість {FREE_REACTIONS_PER_MESSAGE})</li>
+        <li>🖍 6 ексклюзивних кольорів аватара</li>
+        <li>✍️ «Про себе» до {PREMIUM_BIO_LIMIT} символів (замість {FREE_BIO_LIMIT})</li>
       </ul>
 
       {user.isPremium && user.premiumUntil && (
@@ -559,6 +1071,138 @@ function PremiumTab({ user }: TabProps) {
           Прив'яжи картку Аксіоми в Гаманці, щоб платити преміум напряму нею.
         </p>
       )}
+    </div>
+  );
+}
+
+function PhoneSection({ user }: TabProps) {
+  const [phone, setPhone] = useState(user.phone ? formatPhone(user.phone) : "");
+  const [step, setStep] = useState<"idle" | "code">("idle");
+  const [editing, setEditing] = useState(!user.phone);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [, bump] = useState(0);
+  const confirmation = useRef<ConfirmationResult | null>(null);
+  const recaptchaRef = useRef<HTMLDivElement>(null);
+
+  const digits = normalizePhone(phone);
+  const verified = isPhoneVerified(user.phone);
+
+  async function sendCode() {
+    if (!digits) return setError("Вкажи номер, наприклад +380 67 123 45 67");
+    setError(null);
+    setBusy(true);
+    try {
+      // one verified number per account: detach the old one first
+      if (auth.currentUser?.phoneNumber && auth.currentUser.phoneNumber !== "+" + digits) await unlinkPhone();
+      confirmation.current = await sendLinkCode(digits, recaptchaRef.current!);
+      setStep("code");
+    } catch (err) {
+      setError(phoneAuthError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCode(code: string) {
+    if (!confirmation.current || !digits) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await confirmation.current.confirm(code);
+      await setMyPhone(user.id, user.phone ?? null, digits);
+      setStep("idle");
+      setEditing(false);
+      bump((n) => n + 1);
+    } catch (err) {
+      setError(phoneAuthError(err, "Невірний код"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Saving the number without SMS confirmation (it stays "not confirmed")
+  async function saveUnverified() {
+    if (!digits) return setError("Вкажи номер, наприклад +380 67 123 45 67");
+    setError(null);
+    setBusy(true);
+    try {
+      if (auth.currentUser?.phoneNumber && auth.currentUser.phoneNumber !== "+" + digits) await unlinkPhone();
+      await setMyPhone(user.id, user.phone ?? null, digits);
+      setEditing(false);
+      bump((n) => n + 1);
+    } catch (err) {
+      setError(phoneAuthError(err, "Не вдалося зберегти номер"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!window.confirm("Прибрати номер телефону з акаунта? Вхід за SMS перестане працювати.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await unlinkPhone();
+      await setMyPhone(user.id, user.phone ?? null, null);
+      setPhone("");
+      setEditing(true);
+    } catch (err) {
+      setError(phoneAuthError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="phone-section">
+      <div className="phone-section-title">Номер телефону</div>
+      {step === "code" && digits ? (
+        <SmsCodeStep phone={digits} busy={busy} error={error} onSubmit={onCode} onResend={sendCode} onBack={() => setStep("idle")} />
+      ) : editing ? (
+        <>
+          <input type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+380 67 123 45 67" />
+          <p className="settings-hint">
+            Номер можна просто зберегти, а можна підтвердити SMS-кодом — тоді працює вхід за номером.
+          </p>
+          {error && <div className="auth-error">{error}</div>}
+          <div className="phone-section-actions">
+            <button type="button" className="btn-primary" onClick={saveUnverified} disabled={busy || !digits}>
+              Зберегти
+            </button>
+            <button type="button" className="btn-ghost" onClick={sendCode} disabled={busy || !digits}>
+              {busy ? "Надсилаємо…" : "Підтвердити SMS"}
+            </button>
+            {user.phone && (
+              <button type="button" className="btn-ghost" onClick={() => { setEditing(false); setPhone(formatPhone(user.phone!)); setError(null); }}>
+                Скасувати
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="phone-current">
+            {user.phone ? formatPhone(user.phone) : "—"}{" "}
+            <span className={verified ? "phone-badge ok" : "phone-badge"}>{verified ? "✓ підтверджено" : "не підтверджено"}</span>
+          </div>
+          {error && <div className="auth-error">{error}</div>}
+          <div className="phone-section-actions">
+            {!verified && (
+              <button type="button" className="btn-primary" onClick={sendCode} disabled={busy}>
+                Підтвердити
+              </button>
+            )}
+            <button type="button" className="btn-ghost" onClick={() => setEditing(true)} disabled={busy}>
+              Змінити
+            </button>
+            <button type="button" className="btn-ghost" onClick={remove} disabled={busy}>
+              Прибрати
+            </button>
+          </div>
+        </>
+      )}
+      <div ref={recaptchaRef} />
     </div>
   );
 }
@@ -637,7 +1281,7 @@ function AccountTab({ user }: TabProps) {
     setDeleteError(null);
     setDeleting(true);
     try {
-      await deleteAccount(deletePassword, user.id, user.username.toLowerCase());
+      await deleteAccount(deletePassword, user.id, user.username.toLowerCase(), user.phone);
       // Firebase Auth signs the user out as part of deleting them; this
       // just clears any local state on our side too.
       await logout().catch(() => {});
@@ -655,6 +1299,8 @@ function AccountTab({ user }: TabProps) {
         Email
         <input value={email ?? ""} disabled />
       </label>
+
+      <PhoneSection user={user} />
 
       {!isMeSiteAdmin && (
         <div>

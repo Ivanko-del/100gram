@@ -1,21 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { subscribeChats } from "../data/firestore-api";
+import { markChatRead, subscribeChats, subscribePublicProfile } from "../data/firestore-api";
+import { useUnreadCounts } from "../hooks/useUnreadCounts";
 import { useAuth } from "../context/AuthContext";
 import { playNotificationSound } from "../utils/sound";
 import Sidebar from "../components/Sidebar";
 import ChatWindow from "../components/ChatWindow";
-import { ChatSummary } from "../types";
+import LockPrompt from "../components/LockPrompt";
+import { useChatLock } from "../context/ChatLockContext";
+import { ChatSummary, User } from "../types";
 
 export default function ChatPage() {
   const { chatId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { isLocked, hasPassword, unlocked } = useChatLock();
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [profiles, setProfiles] = useState<Record<string, User>>({});
   const lastSeenRef = useRef<Map<string, string> | null>(null);
   const openChatIdRef = useRef(chatId);
   openChatIdRef.current = chatId;
+  const userRef = useRef(user);
+  userRef.current = user;
 
   useEffect(() => {
     if (!user) return;
@@ -28,6 +35,10 @@ export default function ChatPage() {
           const last = chat.lastMessage;
           if (!last || last.senderId === user.id) continue;
           if (chat.id === openChatIdRef.current) continue;
+          const me = userRef.current;
+          if (me?.mutedChats?.includes(chat.id)) continue;
+          const peerUid = !chat.isGroup ? chat.members.find((m) => m.id !== user.id)?.id : undefined;
+          if (peerUid && me?.blockedUids?.includes(peerUid)) continue;
           const seenAt = previous.get(chat.id);
           if (seenAt !== last.createdAt) playNotificationSound();
         }
@@ -42,7 +53,67 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
-  const activeChat = chats.find((c) => c.id === chatId);
+  // Direct chats carry a copy of the other person's profile from when the
+  // chat was created, so a photo added later never shows up in the list.
+  // Follow the live profiles of everyone we have a DM with instead.
+  const dmPeerKey = chats
+    .filter((c) => !c.isGroup && !c.isSaved)
+    .map((c) => c.members.find((m) => m.id !== user?.id)?.id)
+    .filter(Boolean)
+    .sort()
+    .join(",");
+
+  useEffect(() => {
+    const uids = dmPeerKey ? dmPeerKey.split(",") : [];
+    const unsubs = uids.map((uid) =>
+      subscribePublicProfile(uid, (p) => {
+        if (p) setProfiles((prev) => ({ ...prev, [uid]: p }));
+      })
+    );
+    return () => unsubs.forEach((u) => u());
+  }, [dmPeerKey]);
+
+  const liveChats = chats.map((c) => {
+    if (c.isGroup || c.isSaved) return c;
+    const peer = profiles[c.members.find((m) => m.id !== user?.id)?.id ?? ""];
+    if (!peer) return c;
+    return {
+      ...c,
+      name: peer.displayName,
+      avatarColor: peer.avatarColor,
+      avatarUrl: peer.avatarUrl ?? null,
+      // cosmetics count only while the peer's premium is active
+      emojiStatus: peer.isPremium ? peer.emojiStatus ?? null : null,
+      nameColor: peer.isPremium ? peer.nameColor ?? null : null,
+      statusText: peer.isPremium ? peer.statusText ?? null : null,
+      peerId: peer.id,
+      peerLastSeenAt: peer.hideLastSeen ? null : peer.lastSeenAt ?? null,
+    };
+  });
+
+  // Chats that predate read tracking get a silent "read now" mark, so old
+  // history doesn't light up as unread.
+  const initKey = chats.filter((c) => user && !c.readBy[user.id]).map((c) => c.id).join(",");
+  useEffect(() => {
+    if (!user || !initKey) return;
+    initKey.split(",").forEach((id) => markChatRead(id, user.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initKey, user?.id]);
+
+  const unreadCounts = useUnreadCounts(chats, user?.id);
+  const totalUnread = Object.entries(unreadCounts)
+    .filter(([id]) => !(user?.mutedChats ?? []).includes(id))
+    .reduce((sum, [, n]) => sum + n, 0);
+  useEffect(() => {
+    document.title = totalUnread > 0 ? `(${totalUnread}) 100 ГРАМ` : "100 ГРАМ";
+  }, [totalUnread]);
+
+  const blocked = user?.blockedUids ?? [];
+  const visibleChats = liveChats.filter(
+    (c) => c.isGroup || c.isSaved || !c.members.some((m) => m.id !== user?.id && blocked.includes(m.id))
+  );
+
+  const activeChat = liveChats.find((c) => c.id === chatId);
 
   function handleChatCreated(id: string) {
     navigate(`/chat/${id}`);
@@ -50,9 +121,13 @@ export default function ChatPage() {
 
   return (
     <div className={`app-layout ${chatId ? "mobile-show-detail" : ""}`}>
-      <Sidebar chats={chats} activeChatId={chatId} onChatCreated={handleChatCreated} />
-      {activeChat ? (
-        <ChatWindow chat={activeChat} />
+      <Sidebar chats={visibleChats} activeChatId={chatId} onChatCreated={handleChatCreated} />
+      {activeChat && isLocked(activeChat.id) && hasPassword && !unlocked ? (
+        <div className="chat-window-empty">
+          <LockPrompt title={`«${activeChat.name}» заблоковано`} onCancel={() => navigate("/")} />
+        </div>
+      ) : activeChat ? (
+        <ChatWindow chat={activeChat} chats={visibleChats} />
       ) : (
         <div className="chat-window-empty">
           {loading ? "Завантаження чатів…" : (

@@ -1,17 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   deleteMessage,
-  loadOlderMessages,
+  editMessage,
+  markChatRead,
   sendMessage as sendMessageApi,
   setTyping,
   subscribeMessages,
   subscribeTyping,
+  setUserBlocked,
+  toggleReaction,
 } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
-import { isSiteAdmin } from "../constants";
+import { FREE_REACTIONS_PER_MESSAGE, PREMIUM_REACTIONS_PER_MESSAGE, REACTIONS_PREMIUM, isSiteAdmin } from "../constants";
 import { ChatMessage, ChatSummary } from "../types";
 import Avatar from "./Avatar";
+import UserName from "./UserName";
+import ForwardModal from "./ForwardModal";
+import { formatLastSeen } from "../utils/lastSeen";
+import { isUnread } from "../utils/unread";
 import MessageBubble from "./MessageBubble";
 import MessageInput from "./MessageInput";
 import MembersListModal from "./MembersListModal";
@@ -19,54 +26,54 @@ import UserProfileModal from "./UserProfileModal";
 
 interface Props {
   chat: ChatSummary;
+  /** all visible chats, offered as targets when forwarding a message */
+  chats?: ChatSummary[];
 }
 
-export default function ChatWindow({ chat }: Props) {
+const PAGE_SIZE = 60;
+
+export default function ChatWindow({ chat, chats = [] }: Props) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([]);
-  const [olderMessages, setOlderMessages] = useState<ChatMessage[]>([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [showMembers, setShowMembers] = useState(false);
   const [profileUid, setProfileUid] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [forwardMsg, setForwardMsg] = useState<ChatMessage | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const loadingOlder = useRef(false);
+  const sentAt = useRef<number[]>([]);
 
-  const messages = useMemo(() => {
-    const liveIds = new Set(liveMessages.map((m) => m.id));
-    return [...olderMessages.filter((m) => !liveIds.has(m.id)), ...liveMessages];
-  }, [olderMessages, liveMessages]);
-
+  // a different chat: start from a clean slate
   useEffect(() => {
     setLoading(true);
-    setLiveMessages([]);
-    setOlderMessages([]);
-    setHasMore(false);
+    setMessages([]);
     setSendError(null);
-    const unsub = subscribeMessages(chat.id, (msgs, more) => {
-      setLiveMessages(msgs);
-      setHasMore(more);
-      setLoading(false);
-    });
-    return unsub;
+    setPageSize(PAGE_SIZE);
+    setReplyTo(null);
+    setSearchOpen(false);
+    setSearchQuery("");
   }, [chat.id]);
 
-  async function handleLoadOlder() {
-    if (loadingMore || messages.length === 0) return;
-    setLoadingMore(true);
-    try {
-      const { messages: older, hasMore: more } = await loadOlderMessages(chat.id, messages[0].createdAt);
-      setOlderMessages((prev) => [...older, ...prev]);
-      setHasMore(more);
-    } catch (err) {
-      setSendError(describeSendError(err));
-    } finally {
-      setLoadingMore(false);
-    }
-  }
+  // live view of the newest `pageSize` messages
+  useEffect(() => {
+    const unsub = subscribeMessages(
+      chat.id,
+      (msgs) => {
+        setMessages(msgs);
+        setLoading(false);
+      },
+      pageSize
+    );
+    return unsub;
+  }, [chat.id, pageSize]);
 
   useEffect(() => {
     if (!user) return;
@@ -77,11 +84,26 @@ export default function ChatWindow({ chat }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.id, user?.id]);
 
+  // Reading: mark the chat read whenever it is open, visible and has news
   useEffect(() => {
-    // Keyed on the live window only, not the combined list - loading older
-    // history must not yank the view back down to the bottom.
+    if (!user) return;
+    const mark = () => {
+      if (document.visibilityState === "visible" && isUnread(chat, user.id)) markChatRead(chat.id, user.id);
+    };
+    mark();
+    document.addEventListener("visibilitychange", mark);
+    return () => document.removeEventListener("visibilitychange", mark);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.id, chat.lastMessage?.createdAt, chat.readBy[user?.id ?? ""], user?.id]);
+
+  useEffect(() => {
+    // loading older history must not yank the view down to the newest message
+    if (loadingOlder.current) {
+      loadingOlder.current = false;
+      return;
+    }
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [liveMessages.length, chat.id]);
+  }, [messages.length]);
 
   useEffect(() => {
     return () => {
@@ -103,14 +125,67 @@ export default function ChatWindow({ chat }: Props) {
     return code ? `Не вдалося надіслати (${code}): ${msg}` : `Не вдалося надіслати: ${msg}`;
   }
 
+  // crude anti-flood: at most 8 messages per 10 seconds
+  function tooFast(): boolean {
+    const now = Date.now();
+    sentAt.current = sentAt.current.filter((t) => now - t < 10_000);
+    if (sentAt.current.length >= 8) {
+      setSendError("Не так швидко — зачекай кілька секунд");
+      return true;
+    }
+    sentAt.current.push(now);
+    return false;
+  }
+
   function sendMessage(content: string) {
-    if (!user) return;
+    if (!user || tooFast()) return;
     setSendError(null);
-    sendMessageApi(chat.id, user, content, "text").catch((err) => setSendError(describeSendError(err)));
+    const reply = replyTo
+      ? {
+          id: replyTo.id,
+          name: replyTo.sender.displayName,
+          text: replyTo.type === "image" ? "" : replyTo.content.slice(0, 140),
+          type: replyTo.type,
+        }
+      : null;
+    setReplyTo(null);
+    sendMessageApi(chat.id, user, content, "text", { replyTo: reply }).catch((err) => setSendError(describeSendError(err)));
+  }
+
+  function handleEdit(message: ChatMessage, text: string) {
+    const isLast = messages[messages.length - 1]?.id === message.id;
+    editMessage(chat.id, { id: message.id, createdAt: message.createdAt, senderId: message.sender.id }, text, isLast).catch((err) =>
+      setSendError(describeSendError(err))
+    );
+  }
+
+  function forwardTo(target: ChatSummary) {
+    if (!user || !forwardMsg) return;
+    const from = forwardMsg.forwardedFrom ?? forwardMsg.sender.displayName;
+    sendMessageApi(target.id, user, forwardMsg.content, forwardMsg.type, { forwardedFrom: from }).catch((err) =>
+      setSendError(describeSendError(err))
+    );
+    setForwardMsg(null);
+  }
+
+  function jumpTo(messageId: string) {
+    const el = document.getElementById(`msg-${messageId}`);
+    if (!el) {
+      setSendError("Це повідомлення завантажене не повністю — натисни «Показати раніше»");
+      return;
+    }
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightId(messageId);
+    setTimeout(() => setHighlightId(null), 1500);
+  }
+
+  function loadOlder() {
+    loadingOlder.current = true;
+    setPageSize((n) => n + PAGE_SIZE);
   }
 
   function sendImage(url: string) {
-    if (!user) return;
+    if (!user || tooFast()) return;
     setSendError(null);
     sendMessageApi(chat.id, user, url, "image").catch((err) => setSendError(describeSendError(err)));
   }
@@ -120,9 +195,28 @@ export default function ChatWindow({ chat }: Props) {
     setTyping(chat.id, user.id, user.displayName, isTyping).catch(() => {});
   }
 
+  function handleReact(message: ChatMessage, emoji: string) {
+    if (!user) return;
+    const mine = Object.entries(message.reactions)
+      .filter(([, uids]) => uids.includes(user.id))
+      .map(([e]) => e);
+    if (!mine.includes(emoji) && REACTIONS_PREMIUM.includes(emoji) && !user.isPremium) {
+      setSendError("Ці реакції доступні з преміумом ⭐");
+      return;
+    }
+    setSendError(null);
+    const limit = user.isPremium ? PREMIUM_REACTIONS_PER_MESSAGE : FREE_REACTIONS_PER_MESSAGE;
+    toggleReaction(chat.id, message.id, user.id, emoji, mine, limit).catch((err) => setSendError(describeSendError(err)));
+  }
+
   function handleDelete(messageId: string) {
     deleteMessage(chat.id, messageId).catch((err) => setSendError(describeSendError(err)));
   }
+
+  const query = searchQuery.trim().toLowerCase();
+  const shownMessages = query ? messages.filter((m) => m.type === "text" && m.content.toLowerCase().includes(query)) : messages;
+  const hasMore = messages.length >= pageSize && !query;
+  const targets = chats.filter((c) => c.id !== chat.id && (!c.isChannel || (user && c.adminUids.includes(user.id))));
 
   const isGroup = chat.isGroup;
   const isChannel = chat.isChannel;
@@ -133,7 +227,7 @@ export default function ChatWindow({ chat }: Props) {
   const typingLabel = typingUsers.length > 0 ? `${typingUsers.join(", ")} друкує…` : null;
   const subtitle =
     typingLabel ??
-    (isChannel ? `${chat.members.length} підписників` : isGroup ? `${chat.members.length} учасників` : "в мережі");
+    (chat.isSaved ? "Твої нотатки й файли" : !isGroup && chat.statusText ? chat.statusText : isChannel ? `${chat.members.length} підписників` : isGroup ? `${chat.members.length} учасників` : formatLastSeen(chat.peerLastSeenAt));
   const otherMember = !isGroup ? chat.members.find((m) => m.id !== user?.id) : undefined;
 
   function openHeaderInfo() {
@@ -151,21 +245,38 @@ export default function ChatWindow({ chat }: Props) {
           ←
         </button>
         <button type="button" className="chat-header-info" onClick={openHeaderInfo}>
-          <Avatar name={chat.name} color={chat.avatarColor} photoUrl={chat.avatarUrl} />
+          <Avatar name={chat.name} color={chat.avatarColor} photoUrl={chat.avatarUrl} icon={chat.isSaved ? "🔖" : undefined} />
           <div>
             <div className="chat-window-title">
               {isChannel ? "📢 " : isGroup ? "👥 " : ""}
-              {chat.name}
+              <UserName name={chat.name} emoji={chat.emojiStatus} color={chat.nameColor} />
             </div>
             <div className="chat-window-subtitle">{subtitle}</div>
           </div>
         </button>
+        <span className="header-spacer" />
+        <button type="button" className="header-icon-btn" onClick={() => { setSearchOpen((v) => !v); setSearchQuery(""); }} aria-label="Пошук у чаті">
+          🔍
+        </button>
       </header>
+
+      {searchOpen && (
+        <div className="chat-search-bar">
+          <input
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Пошук у цьому чаті"
+          />
+          {query && <span className="settings-hint">{shownMessages.length}</span>}
+        </div>
+      )}
 
       {showMembers && (
         <MembersListModal
           chat={chat}
           onClose={() => setShowMembers(false)}
+          onLeft={() => navigate("/")}
           onSelectMember={(uid) => {
             setShowMembers(false);
             setProfileUid(uid);
@@ -176,18 +287,18 @@ export default function ChatWindow({ chat }: Props) {
 
       <div className="message-list">
         {loading && <div className="empty-hint">Завантаження повідомлень…</div>}
-        {!loading && hasMore && (
-          <button type="button" className="btn-ghost load-older-btn" onClick={handleLoadOlder} disabled={loadingMore}>
-            {loadingMore ? "Завантаження…" : "⬆ Завантажити старіші"}
-          </button>
-        )}
         {!loading && messages.length === 0 && (
           <div className="empty-hint">
             {isChannel ? (canPost ? "Опублікуй перший допис 📢" : "Тут поки що немає дописів") : "Напишіть перше повідомлення 👋"}
           </div>
         )}
-        {messages.map((m, idx) => {
-          const prev = messages[idx - 1];
+        {hasMore && (
+          <button type="button" className="btn-ghost load-older" onClick={loadOlder}>
+            Показати раніше
+          </button>
+        )}
+        {shownMessages.map((m, idx) => {
+          const prev = shownMessages[idx - 1];
           const showSender = isGroup && !isChannel && (!prev || prev.sender.id !== m.sender.id);
           const isOwn = m.sender.id === user?.id;
           return (
@@ -198,6 +309,15 @@ export default function ChatWindow({ chat }: Props) {
               showSender={showSender}
               canDelete={isOwn || isAppAdmin}
               onDelete={handleDelete}
+              myUid={user?.id}
+              isPremium={user?.isPremium}
+              onReact={handleReact}
+              onReply={canPost ? setReplyTo : undefined}
+              onEdit={handleEdit}
+              onForward={setForwardMsg}
+              onJump={jumpTo}
+              highlight={highlightId === m.id}
+              peerReadAt={!isGroup && !chat.isSaved && chat.peerId ? chat.readBy[chat.peerId] ?? null : undefined}
             />
           );
         })}
@@ -206,7 +326,28 @@ export default function ChatWindow({ chat }: Props) {
 
       {sendError && <div className="auth-error chat-send-error">{sendError}</div>}
 
-      {canPost ? (
+      {forwardMsg && <ForwardModal chats={targets} onPick={forwardTo} onClose={() => setForwardMsg(null)} />}
+
+      {replyTo && canPost && (
+        <div className="reply-bar">
+          <div className="reply-bar-body">
+            <span className="reply-bar-name">Відповідь для {replyTo.sender.displayName}</span>
+            <span className="reply-bar-text">{replyTo.type === "image" ? "📷 Фото" : replyTo.content}</span>
+          </div>
+          <button type="button" className="icon-btn" onClick={() => setReplyTo(null)} aria-label="Скасувати відповідь">
+            ✕
+          </button>
+        </div>
+      )}
+
+      {!chat.isGroup && chat.peerId && (user?.blockedUids ?? []).includes(chat.peerId) ? (
+        <div className="channel-readonly-note">
+          Ти заблокував(ла) цього користувача.{" "}
+          <button className="btn-link" onClick={() => user && setUserBlocked(user.id, chat.peerId!, false)}>
+            Розблокувати
+          </button>
+        </div>
+      ) : canPost ? (
         <MessageInput onSend={sendMessage} onSendImage={sendImage} onTyping={handleTyping} disabled={!user} />
       ) : muted ? (
         <div className="channel-readonly-note">🔇 Тебе заглушено {chat.mutedUids.includes(user?.id ?? "") ? "в цьому чаті" : ""}</div>

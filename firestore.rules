@@ -28,6 +28,18 @@ service cloud.firestore {
       allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
 
+    // phone (digits) -> { uid }. Lets others find a person by their exact
+    // number and keeps numbers unique (the number may or may not be
+    // SMS-verified). Signed-in users only, and only single lookups - the
+    // collection cannot be listed.
+    match /phones/{phone} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if false;
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
     match /users/{uid} {
       allow read: if isSignedIn();
       allow create: if isOwner(uid);
@@ -50,6 +62,12 @@ service cloud.firestore {
         || (isSiteAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["badge", "mutedGlobally"]));
       allow delete: if isOwner(uid);
 
+      // Private per-user data (chat lock: password hash + which chats are
+      // locked/hidden). Only the owner can read or write it.
+      match /private/{docId} {
+        allow read, write: if isOwner(uid);
+      }
+
       match /transactions/{txId} {
         allow read: if isOwner(uid);
         // A transfer/premium purchase needs to write into BOTH the sender's
@@ -67,12 +85,12 @@ service cloud.firestore {
         return get(/databases/$(database)/documents/chats/$(chatId)).data;
       }
       function isChatAdmin() {
-        return request.auth.uid in chatData().adminUids;
+        return request.auth.uid in chatData().get('adminUids', []);
       }
       // A channel is a chat with isChannel: true - only its admins may
       // post; a plain group or direct chat lets every member post.
       function canPostIn() {
-        return chatData().isChannel != true || isChatAdmin();
+        return chatData().get('isChannel', false) != true || isChatAdmin();
       }
 
       // `resource == null` covers the "does this chat already exist"
@@ -90,13 +108,29 @@ service cloud.firestore {
           && request.resource.data.adminUids == resource.data.adminUids
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["memberUids", "memberProfiles"]);
       }
+      // `readBy` maps uid -> when they last read; a member may only touch
+      // their OWN entry.
+      function readByChangeOk() {
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(["readBy"])
+          || request.resource.data.readBy.diff(resource.data.get('readBy', {})).affectedKeys().hasOnly([request.auth.uid]);
+      }
+      // Leaving yourself: your uid disappears from memberUids/adminUids and
+      // nothing else about the member list changes.
+      function isSelfLeave() {
+        return request.resource.data.memberUids.toSet() == resource.data.memberUids.toSet().difference([request.auth.uid].toSet())
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["memberUids", "adminUids", "memberProfiles"]);
+      }
       allow update: if isSignedIn() && request.auth.uid in resource.data.memberUids
         && (
-          // any member may bump the "last message" preview when sending
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["updatedAt", "lastMessage"])
+          // any member may bump the "last message" preview when sending and
+          // mark the chat read for themselves
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(["updatedAt", "lastMessage", "readBy"])
+            && readByChangeOk())
           // any member may invite more people into a plain group; channels
           // need admin rights even just to invite
           || (resource.data.isChannel != true && isMemberAddition())
+          // any member may leave a group/channel on their own
+          || isSelfLeave()
           // kicking someone, promoting/demoting, renaming, ... needs admin
           // rights on both groups and channels
           || request.auth.uid in resource.data.adminUids
@@ -104,11 +138,11 @@ service cloud.firestore {
       allow delete: if false;
 
       function isChatMuted() {
-        return 'mutedUids' in chatData() && request.auth.uid in chatData().mutedUids;
+        return request.auth.uid in chatData().get('mutedUids', []);
       }
       function isGloballyMuted() {
         return exists(/databases/$(database)/documents/users/$(request.auth.uid))
-          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.mutedGlobally == true;
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('mutedGlobally', false) == true;
       }
 
       match /messages/{messageId} {
@@ -119,7 +153,17 @@ service cloud.firestore {
           && canPostIn()
           && !isChatMuted()
           && !isGloballyMuted();
-        allow update: if false;
+        // Members may change a message's `reactions` map (emoji -> list of
+        // uids); only the author may edit its text. Sender and time are
+        // immutable.
+        allow update: if isSignedIn()
+          && request.auth.uid in chatData().memberUids
+          && (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(["reactions"])
+            // the author may edit their own message text
+            || (resource.data.senderUid == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["content", "editedAt"]))
+          );
         // Anyone may delete their own message; the site admin may delete
         // any message anywhere, for moderation.
         allow delete: if isSignedIn() && (resource.data.senderUid == request.auth.uid || isSiteAdmin());

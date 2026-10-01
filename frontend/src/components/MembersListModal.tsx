@@ -1,5 +1,16 @@
 import { FormEvent, useEffect, useState } from "react";
-import { DataError, addChatMembers, removeChatMember, renameChat, searchUsers, setChatAdmin, setChatMute } from "../data/firestore-api";
+import {
+  DataError,
+  addChatMembers,
+  leaveChat,
+  removeChatMember,
+  renameChat,
+  searchUsers,
+  setChatAdmin,
+  setChatMute,
+  updateChatInfo,
+} from "../data/firestore-api";
+import { compressImageToDataUrl } from "../utils/image";
 import { useAuth } from "../context/AuthContext";
 import { ChatSummary, PublicUser } from "../types";
 import Avatar from "./Avatar";
@@ -8,9 +19,11 @@ interface Props {
   chat: ChatSummary;
   onClose: () => void;
   onSelectMember: (uid: string) => void;
+  /** called after the current user left the chat */
+  onLeft?: () => void;
 }
 
-export default function MembersListModal({ chat, onClose, onSelectMember }: Props) {
+export default function MembersListModal({ chat, onClose, onSelectMember, onLeft }: Props) {
   const { user } = useAuth();
   const isAdmin = !!user && chat.adminUids.includes(user.id);
   const canInvite = chat.isChannel ? isAdmin : true;
@@ -26,6 +39,53 @@ export default function MembersListModal({ chat, onClose, onSelectMember }: Prop
   const [nameDraft, setNameDraft] = useState(chat.name);
   const [savingName, setSavingName] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
+
+  const [descDraft, setDescDraft] = useState(chat.description ?? "");
+  const [infoBusy, setInfoBusy] = useState(false);
+
+  async function saveDescription() {
+    setError(null);
+    setInfoBusy(true);
+    try {
+      await updateChatInfo(chat.id, { description: descDraft.trim() || null });
+    } catch {
+      setError("Не вдалося зберегти опис");
+    } finally {
+      setInfoBusy(false);
+    }
+  }
+
+  async function pickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError(null);
+    setInfoBusy(true);
+    try {
+      await updateChatInfo(chat.id, { avatarUrl: await compressImageToDataUrl(file, 160, 0.7, 250_000) });
+    } catch (err) {
+      setError(err instanceof DataError ? err.message : "Не вдалося завантажити фото");
+    } finally {
+      setInfoBusy(false);
+    }
+  }
+
+  async function leave() {
+    const soleAdmin = isAdmin && chat.adminUids.length === 1 && chat.members.length > 1;
+    if (soleAdmin) {
+      setError("Ти єдиний адмін. Спершу призначь адміном когось іншого зі списку нижче");
+      return;
+    }
+    if (!user || !window.confirm(`Вийти з ${chat.isChannel ? "каналу" : "групи"} «${chat.name}»?`)) return;
+    setError(null);
+    try {
+      await leaveChat(chat.id, user.id);
+      onLeft?.();
+      onClose();
+    } catch {
+      setError("Не вдалося вийти");
+    }
+  }
 
   useEffect(() => {
     const q = query.trim();
@@ -126,8 +186,33 @@ export default function MembersListModal({ chat, onClose, onSelectMember }: Prop
           </button>
         </div>
 
+        <div className="chat-info-head">
+          <Avatar name={chat.name} color={chat.avatarColor} photoUrl={chat.avatarUrl} size={64} />
+          {chat.description && <p className="chat-description">{chat.description}</p>}
+        </div>
+
         {isAdmin && (
           <div className="chat-settings-block">
+            <label className="btn-ghost chat-rename-trigger" style={{ cursor: "pointer" }}>
+              🖼 Змінити фото
+              <input type="file" accept="image/*" hidden disabled={infoBusy} onChange={pickPhoto} />
+            </label>
+            <textarea
+              className="chat-description-input"
+              value={descDraft}
+              onChange={(e) => setDescDraft(e.target.value)}
+              maxLength={300}
+              rows={2}
+              placeholder="Опис (необов'язково)"
+            />
+            <button
+              type="button"
+              className="btn-ghost chat-rename-trigger"
+              disabled={infoBusy || descDraft.trim() === (chat.description ?? "")}
+              onClick={saveDescription}
+            >
+              💾 Зберегти опис
+            </button>
             {editingName ? (
               <form className="chat-rename-form" onSubmit={saveName}>
                 <input
@@ -244,6 +329,9 @@ export default function MembersListModal({ chat, onClose, onSelectMember }: Prop
             );
           })}
         </div>
+        <button type="button" className="btn-ghost leave-chat-btn" onClick={leave}>
+          🚪 Вийти з {chat.isChannel ? "каналу" : "групи"}
+        </button>
       </div>
     </div>
   );
