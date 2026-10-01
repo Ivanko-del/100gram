@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import type { User as FirebaseAuthUser } from "firebase/auth";
-import { DataError, loginUser, logoutUser, registerUser, subscribeUser, watchAuth } from "../data/firestore-api";
+import { DataError, loginUser, logoutUser, registerUser, requestPasswordReset, subscribeUser, watchAuth } from "../data/firestore-api";
 import { User } from "../types";
 
 interface AuthContextValue {
@@ -11,6 +11,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -84,9 +85,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await logoutUser();
   }, []);
 
+  const resetPassword = useCallback(async (email: string) => {
+    setError(null);
+    try {
+      await requestPasswordReset(email);
+    } catch (e) {
+      setError(errMsg(e, "Не вдалося надіслати лист"));
+      throw e;
+    }
+  }, []);
+
   const value = useMemo(
-    () => ({ user, uid, loading, error, login, register, logout }),
-    [user, uid, loading, error, login, register, logout]
+    () => ({ user, uid, loading, error, login, register, logout, resetPassword }),
+    [user, uid, loading, error, login, register, logout, resetPassword]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

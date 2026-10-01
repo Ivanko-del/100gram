@@ -1,6 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { deleteMessage, sendMessage as sendMessageApi, setTyping, subscribeMessages, subscribeTyping } from "../data/firestore-api";
+import {
+  deleteMessage,
+  loadOlderMessages,
+  sendMessage as sendMessageApi,
+  setTyping,
+  subscribeMessages,
+  subscribeTyping,
+} from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
 import { isSiteAdmin } from "../constants";
 import { ChatMessage, ChatSummary } from "../types";
@@ -17,7 +24,10 @@ interface Props {
 export default function ChatWindow({ chat }: Props) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [liveMessages, setLiveMessages] = useState<ChatMessage[]>([]);
+  const [olderMessages, setOlderMessages] = useState<ChatMessage[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [showMembers, setShowMembers] = useState(false);
@@ -25,26 +35,53 @@ export default function ChatWindow({ chat }: Props) {
   const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const messages = useMemo(() => {
+    const liveIds = new Set(liveMessages.map((m) => m.id));
+    return [...olderMessages.filter((m) => !liveIds.has(m.id)), ...liveMessages];
+  }, [olderMessages, liveMessages]);
+
   useEffect(() => {
     setLoading(true);
-    setMessages([]);
+    setLiveMessages([]);
+    setOlderMessages([]);
+    setHasMore(false);
     setSendError(null);
-    const unsub = subscribeMessages(chat.id, (msgs) => {
-      setMessages(msgs);
+    const unsub = subscribeMessages(chat.id, (msgs, more) => {
+      setLiveMessages(msgs);
+      setHasMore(more);
       setLoading(false);
     });
     return unsub;
   }, [chat.id]);
 
+  async function handleLoadOlder() {
+    if (loadingMore || messages.length === 0) return;
+    setLoadingMore(true);
+    try {
+      const { messages: older, hasMore: more } = await loadOlderMessages(chat.id, messages[0].createdAt);
+      setOlderMessages((prev) => [...older, ...prev]);
+      setHasMore(more);
+    } catch (err) {
+      setSendError(describeSendError(err));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   useEffect(() => {
     if (!user) return;
     const unsub = subscribeTyping(chat.id, user.id, setTypingUsers);
     return unsub;
+    // Depends on the stable user.id, not the whole `user` object, which
+    // changes identity on every Firestore snapshot and would resubscribe needlessly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.id, user?.id]);
 
   useEffect(() => {
+    // Keyed on the live window only, not the combined list - loading older
+    // history must not yank the view back down to the bottom.
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]);
+  }, [liveMessages.length, chat.id]);
 
   useEffect(() => {
     return () => {
@@ -139,6 +176,11 @@ export default function ChatWindow({ chat }: Props) {
 
       <div className="message-list">
         {loading && <div className="empty-hint">Завантаження повідомлень…</div>}
+        {!loading && hasMore && (
+          <button type="button" className="btn-ghost load-older-btn" onClick={handleLoadOlder} disabled={loadingMore}>
+            {loadingMore ? "Завантаження…" : "⬆ Завантажити старіші"}
+          </button>
+        )}
         {!loading && messages.length === 0 && (
           <div className="empty-hint">
             {isChannel ? (canPost ? "Опублікуй перший допис 📢" : "Тут поки що немає дописів") : "Напишіть перше повідомлення 👋"}

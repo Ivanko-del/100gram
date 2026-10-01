@@ -223,6 +223,24 @@ textarea {
   text-decoration: none;
 }
 
+.auth-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.auth-reset-sent {
+  background: rgba(84, 203, 104, 0.15);
+  color: var(--success);
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: center;
+}
+
 /* ---------- App layout ---------- */
 .app-layout {
   display: grid;
@@ -790,6 +808,13 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.load-older-btn {
+  align-self: center;
+  margin-bottom: 12px;
+  font-size: 12px;
+  padding: 7px 14px;
 }
 
 .message-row {

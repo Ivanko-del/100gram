@@ -1,6 +1,7 @@
 import { ChangeEvent, FormEvent, KeyboardEvent, useRef, useState } from "react";
 import { DataError } from "../data/firestore-api";
 import { compressImageToDataUrl } from "../utils/image";
+import { MAX_MESSAGE_LENGTH } from "../constants";
 
 interface Props {
   onSend: (content: string) => void;
@@ -36,6 +37,10 @@ export default function MessageInput({ onSend, onSendImage, onTyping, disabled }
     e.preventDefault();
     const trimmed = value.trim();
     if (!trimmed) return;
+    if (trimmed.length > MAX_MESSAGE_LENGTH) {
+      setMediaError(`Повідомлення задовге (максимум ${MAX_MESSAGE_LENGTH} символів)`);
+      return;
+    }
     onSend(trimmed);
     setValue("");
     onTyping(false);
@@ -122,6 +127,7 @@ export default function MessageInput({ onSend, onSendImage, onTyping, disabled }
           value={value}
           placeholder="Написати повідомлення…"
           rows={1}
+          maxLength={MAX_MESSAGE_LENGTH}
           onChange={(e) => {
             handleChange(e.target.value);
             autoGrow(e.target);

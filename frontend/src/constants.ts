@@ -2,6 +2,10 @@ import { PremiumPlan } from "./types";
 
 export const WELCOME_BONUS = 500;
 
+/** Keeps a single text message well under Firestore's 1 MB per-document
+ * limit and stops accidental wall-of-text / paste spam. */
+export const MAX_MESSAGE_LENGTH = 4000;
+
 export const PREMIUM_PLANS: PremiumPlan[] = [
   { id: "1m", label: "1 місяць", days: 30, price: 100 },
   { id: "6m", label: "6 місяців", days: 180, price: 500 },

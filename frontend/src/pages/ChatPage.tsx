@@ -37,6 +37,9 @@ export default function ChatPage() {
       setLoading(false);
     });
     return unsub;
+    // Depends on the stable user.id, not the whole `user` object, which
+    // changes identity on every Firestore snapshot and would resubscribe needlessly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   const activeChat = chats.find((c) => c.id === chatId);

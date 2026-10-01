@@ -57,7 +57,6 @@ export interface ChatMessage {
   content: string;
   type: "text" | "image";
   createdAt: string;
-  editedAt?: string | null;
   sender: MessageSender;
 }
 

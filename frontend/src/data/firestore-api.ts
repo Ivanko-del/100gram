@@ -4,6 +4,7 @@ import {
   deleteUser,
   onAuthStateChanged,
   reauthenticateWithCredential,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
   updatePassword,
@@ -28,6 +29,7 @@ import {
   runTransaction,
   serverTimestamp,
   setDoc,
+  startAfter,
   startAt,
   updateDoc,
   where,
@@ -40,7 +42,7 @@ import { ChatMessage, ChatSummary, PremiumPlan, PublicUser, User, UserBadge, Wal
 export class DataError extends Error {}
 
 /** Accepts "@olha" or "olha" alike - usernames are stored without the "@". */
-function normalizeUsername(raw: string): string {
+export function normalizeUsername(raw: string): string {
   return raw.trim().toLowerCase().replace(/^@/, "");
 }
 
@@ -117,6 +119,22 @@ export async function loginUser(email: string, password: string): Promise<void> 
 
 export async function logoutUser(): Promise<void> {
   await signOut(auth);
+}
+
+/** Sends a reset-password email via Firebase Auth's default flow (its own
+ * hosted reset page, no app-side handling needed). Swallows
+ * auth/user-not-found so the caller can show the same "check your email"
+ * message regardless of whether the address is registered - otherwise this
+ * endpoint would let anyone probe which emails have an account. */
+export async function requestPasswordReset(email: string): Promise<void> {
+  try {
+    await sendPasswordResetEmail(auth, email);
+  } catch (err) {
+    const code = (err as { code?: string })?.code;
+    if (code === "auth/user-not-found") return;
+    if (code === "auth/invalid-email") throw new DataError("Некоректний email");
+    throw new DataError("Не вдалося надіслати лист - спробуй пізніше");
+  }
 }
 
 async function reauthenticate(currentPassword: string): Promise<void> {
@@ -256,11 +274,12 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
       : "Чат";
   const avatarColor = isGroup ? (isChannel ? "#3d8fdb" : "#8774e1") : otherUid ? profiles[otherUid]?.avatarColor ?? "#999" : "#999";
   const avatarUrl = isGroup ? null : otherUid ? profiles[otherUid]?.avatarUrl ?? null : null;
-  const lastMessage = d.lastMessage
+  const rawLastMessage = d.lastMessage as { content: string; senderUid: string; createdAt: unknown } | undefined;
+  const lastMessage = rawLastMessage
     ? {
-        content: (d.lastMessage as any).content,
-        senderId: (d.lastMessage as any).senderUid,
-        createdAt: tsToIso((d.lastMessage as any).createdAt),
+        content: rawLastMessage.content,
+        senderId: rawLastMessage.senderUid,
+        createdAt: tsToIso(rawLastMessage.createdAt),
       }
     : null;
   return {
@@ -454,11 +473,37 @@ function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, c
   };
 }
 
-export function subscribeMessages(chatId: string, cb: (messages: ChatMessage[]) => void) {
-  const qy = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "asc"), limit(200));
+const MESSAGES_PAGE_SIZE = 50;
+
+/** Live window of the MOST RECENT messages. Ordered desc so the Firestore
+ * query cursor always tracks "the newest N" as new messages arrive - an
+ * asc-ordered `limit()` would instead pin to "the oldest N ever sent" and
+ * silently stop receiving anything once a chat passed that many messages. */
+export function subscribeMessages(chatId: string, cb: (messages: ChatMessage[], hasMore: boolean) => void) {
+  const qy = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc"), limit(MESSAGES_PAGE_SIZE));
   return onSnapshot(qy, (snap) => {
-    cb(snap.docs.map((d) => mapMessage(d, chatId)));
+    cb(snap.docs.map((d) => mapMessage(d, chatId)).reverse(), snap.docs.length === MESSAGES_PAGE_SIZE);
   });
+}
+
+/** One-shot fetch of the page of messages just older than `beforeIso`, for
+ * a "load older" button - history further back than the live window doesn't
+ * need to be a live listener. */
+export async function loadOlderMessages(
+  chatId: string,
+  beforeIso: string
+): Promise<{ messages: ChatMessage[]; hasMore: boolean }> {
+  const qy = query(
+    collection(db, "chats", chatId, "messages"),
+    orderBy("createdAt", "desc"),
+    startAfter(Timestamp.fromDate(new Date(beforeIso))),
+    limit(MESSAGES_PAGE_SIZE)
+  );
+  const snap = await getDocs(qy);
+  return {
+    messages: snap.docs.map((d) => mapMessage(d, chatId)).reverse(),
+    hasMore: snap.docs.length === MESSAGES_PAGE_SIZE,
+  };
 }
 
 export async function sendMessage(chatId: string, sender: User, content: string, type: "text" | "image" = "text") {
