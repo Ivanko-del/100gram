@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { AxiomaError, AXIOMA_EXCHANGE_RATE, withdrawFromAxioma } from "../axioma";
+import { AxiomaError, AXIOMA_EXCHANGE_RATE, AXIOMA_SITE_URL, withdrawFromAxioma } from "../axioma";
 import { topUpGramsFromAxioma } from "../data/firestore-api";
 import { useAxioma } from "../hooks/useAxioma";
 import { User } from "../types";
@@ -87,7 +87,10 @@ export default function AxiomaCard({ user }: Props) {
         <h3 style={{ marginTop: 0 }}>💳 Поповнити з Аксіоми</h3>
         <p className="settings-hint">
           Увійди в акаунт Аксіома Банку (окремий від 100 ГРАМ), щоб поповнювати ГРАМи з
-          віртуальної картки. Акаунт Аксіоми має бути вже відкритий у самому застосунку Аксіоми.
+          віртуальної картки. Немає акаунта?{" "}
+          <a href={AXIOMA_SITE_URL} target="_blank" rel="noopener noreferrer">
+            Зареєструйся в Аксіома Банку →
+          </a>
         </p>
         <label>
           Нік Аксіоми

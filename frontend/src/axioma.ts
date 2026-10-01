@@ -51,6 +51,10 @@ declare global {
 /** Our id in Аксіома's `partners` map - keep in sync if it's ever renamed. */
 export const AXIOMA_PROJECT_ID = "100gram";
 
+/** Live Аксіома Банк site - a player without a card yet opens one there
+ * (this SDK can only log in to an existing account, never create one). */
+export const AXIOMA_SITE_URL = "https://aksioma-bay.vercel.app/";
+
 /** ГРАМ awarded per 1 virtual ₴ withdrawn from Аксіома. 1:1 keeps the numbers simple; change here only. */
 export const AXIOMA_EXCHANGE_RATE = 1;
 

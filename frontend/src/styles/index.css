@@ -1072,6 +1072,15 @@ textarea {
   margin: 0;
 }
 
+.settings-hint a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.settings-hint a:hover {
+  text-decoration: underline;
+}
+
 .settings-panel label {
   display: flex;
   flex-direction: column;
