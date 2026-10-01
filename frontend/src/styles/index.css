@@ -1152,6 +1152,103 @@ textarea {
   outline: none;
 }
 
+.poll-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--bg-sidebar);
+  border-top: 1px solid var(--border);
+}
+
+.poll-composer input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 14px;
+  outline: none;
+  width: 100%;
+}
+
+.poll-composer-option {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.poll-composer-option input {
+  flex: 1;
+}
+
+.poll-composer-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.poll {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+  padding: 2px 0;
+}
+
+.poll-question {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.poll-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+}
+
+.poll-option.mine {
+  border-color: var(--accent);
+}
+
+.poll-option-bar {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  z-index: 0;
+  transition: width 0.2s ease;
+}
+
+.poll-option-label {
+  position: relative;
+  z-index: 1;
+  font-size: 14px;
+}
+
+.poll-option-pct {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.poll-total {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
 .message-input {
   flex: 1;
   background: var(--bg-input);
@@ -2772,6 +2869,57 @@ textarea {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.pinned-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 14px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.pinned-banner-icon {
+  flex-shrink: 0;
+}
+
+.pinned-banner-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pinned-banner-unpin {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  opacity: 0.7;
+}
+
+.pinned-banner-unpin:hover {
+  opacity: 1;
+  background: var(--bg-elevated);
+}
+
+.message-pinned-tag {
+  font-size: 11px;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+
+.mention {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .chat-search-bar {

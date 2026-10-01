@@ -400,6 +400,7 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
       Object.entries((d.readBy as Record<string, unknown>) ?? {}).map(([uid, ts]) => [uid, tsToIso(ts)])
     ),
     updatedAt: d.updatedAt ? tsToIso(d.updatedAt) : tsToIso(d.createdAt),
+    pinnedMessageId: (d.pinnedMessageId as string) ?? null,
   };
 }
 
@@ -653,15 +654,23 @@ export async function setChatMute(chatId: string, uid: string, muted: boolean): 
   });
 }
 
+/** Pins (or, with `null`, unpins) a message so it shows as a banner at the
+ * top of the chat. Allowed for any member in a direct chat, admins only in
+ * a group/channel - enforced in firestore.rules, not just here. */
+export async function pinMessage(chatId: string, messageId: string | null): Promise<void> {
+  await updateDoc(doc(db, "chats", chatId), { pinnedMessageId: messageId });
+}
+
 /* ---------------- messages ---------------- */
 
 function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, chatId: string): ChatMessage {
   const d = snap.data();
+  const rawPoll = d.poll as { question: string; options: string[]; votes?: Record<string, string[]> } | undefined;
   return {
     id: snap.id,
     chatId,
     content: d.content as string,
-    type: d.type === "image" ? "image" : "text",
+    type: d.type === "image" ? "image" : d.type === "poll" ? "poll" : "text",
     createdAt: tsToIso(d.createdAt),
     sender: {
       id: d.senderUid as string,
@@ -675,6 +684,7 @@ function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, c
     editedAt: d.editedAt instanceof Timestamp ? d.editedAt.toDate().toISOString() : null,
     replyTo: (d.replyTo as ChatMessage["replyTo"]) ?? null,
     forwardedFrom: (d.forwardedFrom as string) ?? null,
+    poll: rawPoll ? { question: rawPoll.question, options: rawPoll.options, votes: rawPoll.votes ?? {} } : null,
   };
 }
 
@@ -690,13 +700,21 @@ export function subscribeMessages(chatId: string, cb: (messages: ChatMessage[]) 
 export interface SendExtras {
   replyTo?: ChatMessage["replyTo"];
   forwardedFrom?: string | null;
+  /** only for type "poll" - votes always start empty, even when forwarding */
+  poll?: { question: string; options: string[] };
+}
+
+function lastMessagePreview(type: "text" | "image" | "poll", content: string): string {
+  if (type === "image") return "📷 Фото";
+  if (type === "poll") return "📊 " + content;
+  return content;
 }
 
 export async function sendMessage(
   chatId: string,
   sender: User,
   content: string,
-  type: "text" | "image" = "text",
+  type: "text" | "image" | "poll" = "text",
   extras: SendExtras = {}
 ) {
   const chatRef = doc(db, "chats", chatId);
@@ -716,10 +734,11 @@ export async function sendMessage(
     createdAt,
     ...(extras.replyTo ? { replyTo: extras.replyTo } : {}),
     ...(extras.forwardedFrom ? { forwardedFrom: extras.forwardedFrom } : {}),
+    ...(extras.poll ? { poll: { question: extras.poll.question, options: extras.poll.options, votes: {} } } : {}),
   });
   batch.update(chatRef, {
     updatedAt: createdAt,
-    lastMessage: { content: type === "image" ? "📷 Фото" : content, senderUid: sender.id, createdAt },
+    lastMessage: { content: lastMessagePreview(type, content), senderUid: sender.id, createdAt },
     // sending counts as reading up to this message (keeps unread counts right)
     [`readBy.${sender.id}`]: createdAt,
   });
@@ -745,6 +764,28 @@ export async function toggleReaction(
   const args: unknown[] = [new FieldPath("reactions", emoji), arrayUnion(uid)];
   if (mine.length >= limitPerMessage) {
     args.push(new FieldPath("reactions", mine[0]), arrayRemove(uid));
+  }
+  await (updateDoc as (r: unknown, ...a: unknown[]) => Promise<void>)(ref, ...args);
+}
+
+/** Casts (or changes/retracts) a vote on a poll message. Single-choice:
+ * picking a new option moves the vote, picking the same one again retracts
+ * it. `previousIndex` is which option this user currently has, if any. */
+export async function votePoll(
+  chatId: string,
+  messageId: string,
+  uid: string,
+  optionIndex: number,
+  previousIndex: number | null
+): Promise<void> {
+  const ref = doc(db, "chats", chatId, "messages", messageId);
+  if (previousIndex === optionIndex) {
+    await updateDoc(ref, new FieldPath("poll", "votes", String(optionIndex)), arrayRemove(uid));
+    return;
+  }
+  const args: unknown[] = [new FieldPath("poll", "votes", String(optionIndex)), arrayUnion(uid)];
+  if (previousIndex !== null) {
+    args.push(new FieldPath("poll", "votes", String(previousIndex)), arrayRemove(uid));
   }
   await (updateDoc as (r: unknown, ...a: unknown[]) => Promise<void>)(ref, ...args);
 }

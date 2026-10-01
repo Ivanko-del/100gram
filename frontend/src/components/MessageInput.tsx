@@ -2,21 +2,25 @@ import { ChangeEvent, FormEvent, KeyboardEvent, useRef, useState } from "react";
 import { DataError } from "../data/firestore-api";
 import { compressImageToDataUrl } from "../utils/image";
 import { isEnterSends } from "../utils/prefs";
-import { MAX_MESSAGE_LENGTH } from "../constants";
+import { MAX_MESSAGE_LENGTH, MAX_POLL_OPTIONS, MIN_POLL_OPTIONS } from "../constants";
 
 interface Props {
   onSend: (content: string) => void;
   onSendImage: (url: string) => void;
+  onSendPoll?: (question: string, options: string[]) => void;
   onTyping: (isTyping: boolean) => void;
   disabled?: boolean;
 }
 
 const MAX_TEXTAREA_HEIGHT = 140;
 
-export default function MessageInput({ onSend, onSendImage, onTyping, disabled }: Props) {
+export default function MessageInput({ onSend, onSendImage, onSendPoll, onTyping, disabled }: Props) {
   const [value, setValue] = useState("");
   const [showGifInput, setShowGifInput] = useState(false);
   const [gifUrl, setGifUrl] = useState("");
+  const [showPollForm, setShowPollForm] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState(["", ""]);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -89,6 +93,29 @@ export default function MessageInput({ onSend, onSendImage, onTyping, disabled }
     setShowGifInput(false);
   }
 
+  function closePollForm() {
+    setShowPollForm(false);
+    setPollQuestion("");
+    setPollOptions(["", ""]);
+  }
+
+  function onSubmitPoll(e: FormEvent) {
+    e.preventDefault();
+    const question = pollQuestion.trim();
+    const options = pollOptions.map((o) => o.trim()).filter(Boolean);
+    if (!question) {
+      setMediaError("Вкажи питання опитування");
+      return;
+    }
+    if (options.length < MIN_POLL_OPTIONS) {
+      setMediaError(`Додай ще варіантів (мінімум ${MIN_POLL_OPTIONS})`);
+      return;
+    }
+    setMediaError(null);
+    onSendPoll?.(question, options);
+    closePollForm();
+  }
+
   return (
     <div>
       {mediaError && <div className="auth-error message-media-error">{mediaError}</div>}
@@ -108,6 +135,49 @@ export default function MessageInput({ onSend, onSendImage, onTyping, disabled }
           </button>
         </form>
       )}
+      {showPollForm && (
+        <form className="poll-composer" onSubmit={onSubmitPoll}>
+          <input
+            value={pollQuestion}
+            onChange={(e) => setPollQuestion(e.target.value)}
+            placeholder="Питання опитування"
+            autoFocus
+          />
+          {pollOptions.map((opt, i) => (
+            <div className="poll-composer-option" key={i}>
+              <input
+                value={opt}
+                onChange={(e) => setPollOptions((prev) => prev.map((o, j) => (j === i ? e.target.value : o)))}
+                placeholder={`Варіант ${i + 1}`}
+                maxLength={100}
+              />
+              {pollOptions.length > MIN_POLL_OPTIONS && (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Видалити варіант"
+                  onClick={() => setPollOptions((prev) => prev.filter((_, j) => j !== i))}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+          <div className="poll-composer-actions">
+            {pollOptions.length < MAX_POLL_OPTIONS && (
+              <button type="button" className="btn-ghost" onClick={() => setPollOptions((prev) => [...prev, ""])}>
+                + Варіант
+              </button>
+            )}
+            <button className="btn-primary" type="submit">
+              Створити опитування
+            </button>
+            <button type="button" className="btn-ghost" onClick={closePollForm}>
+              Скасувати
+            </button>
+          </div>
+        </form>
+      )}
       <form className="message-input-bar" onSubmit={submit}>
         <label className="icon-btn message-media-btn" title="Надіслати фото">
           {uploadingPhoto ? "…" : "🖼️"}
@@ -122,6 +192,17 @@ export default function MessageInput({ onSend, onSendImage, onTyping, disabled }
         >
           GIF
         </button>
+        {onSendPoll && (
+          <button
+            type="button"
+            className="icon-btn message-media-btn"
+            title="Створити опитування"
+            disabled={disabled}
+            onClick={() => setShowPollForm((v) => !v)}
+          >
+            📊
+          </button>
+        )}
         <textarea
           ref={textareaRef}
           className="message-input"

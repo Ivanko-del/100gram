@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { REACTIONS_FREE, REACTIONS_PREMIUM } from "../constants";
 import { ChatMessage } from "../types";
+import { renderWithMentions } from "../utils/mentions";
 import UserName from "./UserName";
 
 interface Props {
@@ -20,13 +21,39 @@ interface Props {
   /** scroll to a quoted message */
   onJump?: (messageId: string) => void;
   highlight?: boolean;
+  onVote?: (message: ChatMessage, optionIndex: number) => void;
+  /** whether the pin/unpin action is allowed here (DM: anyone, group/channel: admins) */
+  canPin?: boolean;
+  isPinned?: boolean;
+  onPin?: (message: ChatMessage) => void;
+  onUnpin?: () => void;
 }
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
 }
 
-export default function MessageBubble({ message, isOwn, showSender, canDelete, onDelete, myUid, isPremium, onReact, peerReadAt, onReply, onEdit, onForward, onJump, highlight }: Props) {
+export default function MessageBubble({
+  message,
+  isOwn,
+  showSender,
+  canDelete,
+  onDelete,
+  myUid,
+  isPremium,
+  onReact,
+  peerReadAt,
+  onReply,
+  onEdit,
+  onForward,
+  onJump,
+  highlight,
+  onVote,
+  canPin,
+  isPinned,
+  onPin,
+  onUnpin,
+}: Props) {
   const [confirming, setConfirming] = useState(false);
   const [picking, setPicking] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -55,11 +82,16 @@ export default function MessageBubble({ message, isOwn, showSender, canDelete, o
         {message.replyTo && (
           <button type="button" className="message-quote" onClick={() => onJump?.(message.replyTo!.id)}>
             <span className="message-quote-name">{message.replyTo.name}</span>
-            <span className="message-quote-text">{message.replyTo.type === "image" ? "📷 Фото" : message.replyTo.text}</span>
+            <span className="message-quote-text">
+              {message.replyTo.type === "image" ? "📷 Фото" : message.replyTo.type === "poll" ? `📊 ${message.replyTo.text}` : message.replyTo.text}
+            </span>
           </button>
         )}
+        {isPinned && <div className="message-pinned-tag">📌 Закріплено</div>}
         {message.type === "image" ? (
           <img className="message-image" src={message.content} alt="" loading="lazy" />
+        ) : message.type === "poll" && message.poll ? (
+          <PollView poll={message.poll} myUid={myUid} onVote={(idx) => onVote?.(message, idx)} />
         ) : editing ? (
           <form
             className="message-edit"
@@ -78,7 +110,7 @@ export default function MessageBubble({ message, isOwn, showSender, canDelete, o
           </form>
         ) : (
           <div className="message-content">
-            {message.content}
+            {renderWithMentions(message.content)}
             {message.editedAt && <span className="message-edited"> (ред.)</span>}
           </div>
         )}
@@ -109,7 +141,7 @@ export default function MessageBubble({ message, isOwn, showSender, canDelete, o
             ☺
           </button>
         )}
-        {(onReply || onForward || onEdit) && (
+        {(onReply || onForward || onEdit || canPin) && (
           <button type="button" className="message-react-btn message-more-btn" onClick={() => { setMenuOpen((v) => !v); setPicking(false); }} title="Дії">
             ⋯
           </button>
@@ -124,6 +156,12 @@ export default function MessageBubble({ message, isOwn, showSender, canDelete, o
             )}
             {onForward && (
               <button type="button" onClick={() => { setMenuOpen(false); onForward(message); }}>↪ Переслати</button>
+            )}
+            {canPin && !isPinned && onPin && (
+              <button type="button" onClick={() => { setMenuOpen(false); onPin(message); }}>📌 Закріпити</button>
+            )}
+            {canPin && isPinned && onUnpin && (
+              <button type="button" onClick={() => { setMenuOpen(false); onUnpin(); }}>📌 Відкріпити</button>
             )}
             {message.type === "text" && (
               <button type="button" onClick={() => { setMenuOpen(false); navigator.clipboard?.writeText(message.content).catch(() => {}); }}>⧉ Копіювати</button>
@@ -175,6 +213,30 @@ export default function MessageBubble({ message, isOwn, showSender, canDelete, o
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function PollView({ poll, myUid, onVote }: { poll: NonNullable<ChatMessage["poll"]>; myUid?: string; onVote: (optionIndex: number) => void }) {
+  const counts = poll.options.map((_, i) => (poll.votes[String(i)] ?? []).length);
+  const total = counts.reduce((a, b) => a + b, 0);
+  const myIndex = poll.options.findIndex((_, i) => myUid && (poll.votes[String(i)] ?? []).includes(myUid));
+
+  return (
+    <div className="poll">
+      <div className="poll-question">📊 {poll.question}</div>
+      {poll.options.map((option, i) => {
+        const pct = total > 0 ? Math.round((counts[i] / total) * 100) : 0;
+        const mine = i === myIndex;
+        return (
+          <button type="button" key={i} className={`poll-option ${mine ? "mine" : ""}`} onClick={() => onVote(i)}>
+            <div className="poll-option-bar" style={{ width: `${pct}%` }} />
+            <span className="poll-option-label">{mine ? "✓ " : ""}{option}</span>
+            <span className="poll-option-pct">{pct}%</span>
+          </button>
+        );
+      })}
+      <div className="poll-total">{total === 0 ? "Ще немає голосів" : `${total} ${total === 1 ? "голос" : "голосів"}`}</div>
     </div>
   );
 }

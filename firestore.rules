@@ -120,6 +120,11 @@ service cloud.firestore {
         return request.resource.data.memberUids.toSet() == resource.data.memberUids.toSet().difference([request.auth.uid].toSet())
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["memberUids", "adminUids", "memberProfiles"]);
       }
+      // Pinning/unpinning a message: any member in a direct chat, admins
+      // only in a group/channel (same bar as renaming/kicking there).
+      function isPinChange() {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(["pinnedMessageId"]);
+      }
       allow update: if isSignedIn() && request.auth.uid in resource.data.memberUids
         && (
           // any member may bump the "last message" preview when sending and
@@ -131,6 +136,7 @@ service cloud.firestore {
           || (resource.data.isChannel != true && isMemberAddition())
           // any member may leave a group/channel on their own
           || isSelfLeave()
+          || (isPinChange() && (resource.data.isGroup != true || request.auth.uid in resource.data.adminUids))
           // kicking someone, promoting/demoting, renaming, ... needs admin
           // rights on both groups and channels
           || request.auth.uid in resource.data.adminUids
@@ -153,13 +159,22 @@ service cloud.firestore {
           && canPostIn()
           && !isChatMuted()
           && !isGloballyMuted();
+        // A poll vote may only touch `poll.votes` - the question/options
+        // text must come through unchanged, so voting can never be used to
+        // rewrite what the poll actually says.
+        function pollVoteOk() {
+          return !('poll' in request.resource.data)
+            || (request.resource.data.poll.question == resource.data.poll.question
+              && request.resource.data.poll.options == resource.data.poll.options);
+        }
         // Members may change a message's `reactions` map (emoji -> list of
-        // uids); only the author may edit its text. Sender and time are
-        // immutable.
+        // uids) or vote on its `poll`; only the author may edit its text.
+        // Sender and time are immutable.
         allow update: if isSignedIn()
           && request.auth.uid in chatData().memberUids
           && (
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(["reactions"])
+            || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(["poll"]) && pollVoteOk())
             // the author may edit their own message text
             || (resource.data.senderUid == request.auth.uid
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["content", "editedAt"]))

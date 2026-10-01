@@ -6,6 +6,9 @@ export const WELCOME_BONUS = 500;
  * limit and stops accidental wall-of-text / paste spam. */
 export const MAX_MESSAGE_LENGTH = 4000;
 
+export const MIN_POLL_OPTIONS = 2;
+export const MAX_POLL_OPTIONS = 10;
+
 export const PREMIUM_PLANS: PremiumPlan[] = [
   { id: "1m", label: "1 місяць", days: 30, price: 500 },
   { id: "6m", label: "6 місяців", days: 180, price: 2400 },

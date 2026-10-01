@@ -4,12 +4,14 @@ import {
   deleteMessage,
   editMessage,
   markChatRead,
+  pinMessage,
   sendMessage as sendMessageApi,
   setTyping,
   subscribeMessages,
   subscribeTyping,
   setUserBlocked,
   toggleReaction,
+  votePoll,
 } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
 import { FREE_REACTIONS_PER_MESSAGE, PREMIUM_REACTIONS_PER_MESSAGE, REACTIONS_PREMIUM, isSiteAdmin } from "../constants";
@@ -162,9 +164,14 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
   function forwardTo(target: ChatSummary) {
     if (!user || !forwardMsg) return;
     const from = forwardMsg.forwardedFrom ?? forwardMsg.sender.displayName;
-    sendMessageApi(target.id, user, forwardMsg.content, forwardMsg.type, { forwardedFrom: from }).catch((err) =>
-      setSendError(describeSendError(err))
-    );
+    // Forwarding a poll resets the vote count - it travels as a fresh poll
+    // with the same question/options, not as a snapshot of someone's votes.
+    sendMessageApi(target.id, user, forwardMsg.content, forwardMsg.type, {
+      forwardedFrom: from,
+      ...(forwardMsg.type === "poll" && forwardMsg.poll
+        ? { poll: { question: forwardMsg.poll.question, options: forwardMsg.poll.options } }
+        : {}),
+    }).catch((err) => setSendError(describeSendError(err)));
     setForwardMsg(null);
   }
 
@@ -188,6 +195,30 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
     if (!user || tooFast()) return;
     setSendError(null);
     sendMessageApi(chat.id, user, url, "image").catch((err) => setSendError(describeSendError(err)));
+  }
+
+  function sendPoll(question: string, options: string[]) {
+    if (!user || tooFast()) return;
+    setSendError(null);
+    sendMessageApi(chat.id, user, question, "poll", { poll: { question, options } }).catch((err) =>
+      setSendError(describeSendError(err))
+    );
+  }
+
+  function handleVote(message: ChatMessage, optionIndex: number) {
+    if (!user || !message.poll) return;
+    const previousIndex = message.poll.options.findIndex((_, i) => (message.poll!.votes[String(i)] ?? []).includes(user.id));
+    votePoll(chat.id, message.id, user.id, optionIndex, previousIndex === -1 ? null : previousIndex).catch((err) =>
+      setSendError(describeSendError(err))
+    );
+  }
+
+  function handlePin(message: ChatMessage) {
+    pinMessage(chat.id, message.id).catch((err) => setSendError(describeSendError(err)));
+  }
+
+  function handleUnpin() {
+    pinMessage(chat.id, null).catch((err) => setSendError(describeSendError(err)));
   }
 
   function handleTyping(isTyping: boolean) {
@@ -222,6 +253,10 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
   const isChannel = chat.isChannel;
   const isAdmin = !!user && chat.adminUids.includes(user.id);
   const isAppAdmin = isSiteAdmin(user?.username);
+  // Pinning: any member in a direct chat, admins only in a group/channel -
+  // mirrored in firestore.rules' isPinChange() check.
+  const canPin = !isGroup || isAdmin;
+  const pinnedMessage = chat.pinnedMessageId ? messages.find((m) => m.id === chat.pinnedMessageId) : undefined;
   const muted = !!user && (!!user.mutedGlobally || chat.mutedUids.includes(user.id));
   const canPost = (!isChannel || isAdmin) && !muted;
   const typingLabel = typingUsers.length > 0 ? `${typingUsers.join(", ")} друкує…` : null;
@@ -259,6 +294,35 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
           🔍
         </button>
       </header>
+
+      {chat.pinnedMessageId && (
+        <button type="button" className="pinned-banner" onClick={() => jumpTo(chat.pinnedMessageId!)}>
+          <span className="pinned-banner-icon">📌</span>
+          <span className="pinned-banner-text">
+            {pinnedMessage
+              ? pinnedMessage.type === "image"
+                ? "📷 Фото"
+                : pinnedMessage.type === "poll"
+                  ? pinnedMessage.poll?.question ?? "Опитування"
+                  : pinnedMessage.content
+              : "Закріплене повідомлення"}
+          </span>
+          {canPin && (
+            <span
+              className="pinned-banner-unpin"
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleUnpin();
+              }}
+              aria-label="Відкріпити"
+            >
+              ✕
+            </span>
+          )}
+        </button>
+      )}
 
       {searchOpen && (
         <div className="chat-search-bar">
@@ -318,6 +382,11 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
               onJump={jumpTo}
               highlight={highlightId === m.id}
               peerReadAt={!isGroup && !chat.isSaved && chat.peerId ? chat.readBy[chat.peerId] ?? null : undefined}
+              onVote={handleVote}
+              canPin={canPin}
+              isPinned={chat.pinnedMessageId === m.id}
+              onPin={handlePin}
+              onUnpin={handleUnpin}
             />
           );
         })}
@@ -332,7 +401,9 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
         <div className="reply-bar">
           <div className="reply-bar-body">
             <span className="reply-bar-name">Відповідь для {replyTo.sender.displayName}</span>
-            <span className="reply-bar-text">{replyTo.type === "image" ? "📷 Фото" : replyTo.content}</span>
+            <span className="reply-bar-text">
+              {replyTo.type === "image" ? "📷 Фото" : replyTo.type === "poll" ? `📊 ${replyTo.content}` : replyTo.content}
+            </span>
           </div>
           <button type="button" className="icon-btn" onClick={() => setReplyTo(null)} aria-label="Скасувати відповідь">
             ✕
@@ -348,7 +419,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
           </button>
         </div>
       ) : canPost ? (
-        <MessageInput onSend={sendMessage} onSendImage={sendImage} onTyping={handleTyping} disabled={!user} />
+        <MessageInput onSend={sendMessage} onSendImage={sendImage} onSendPoll={sendPoll} onTyping={handleTyping} disabled={!user} />
       ) : muted ? (
         <div className="channel-readonly-note">🔇 Тебе заглушено {chat.mutedUids.includes(user?.id ?? "") ? "в цьому чаті" : ""}</div>
       ) : (

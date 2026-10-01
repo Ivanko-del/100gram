@@ -80,6 +80,15 @@ export interface ChatSummary {
   /** uid -> when that member last read the chat (drives unread badges and ✓✓) */
   readBy: Record<string, string>;
   updatedAt: string;
+  /** id of the message shown in the pinned banner at the top of the chat */
+  pinnedMessageId?: string | null;
+}
+
+export interface PollData {
+  question: string;
+  options: string[];
+  /** optionIndex (as string) -> uids who voted for it */
+  votes: Record<string, string[]>;
 }
 
 export interface MessageSender {
@@ -95,14 +104,16 @@ export interface ChatMessage {
   id: string;
   chatId: string;
   content: string;
-  type: "text" | "image";
+  type: "text" | "image" | "poll";
   createdAt: string;
   editedAt?: string | null;
   sender: MessageSender;
   /** emoji -> uids that reacted with it */
   reactions: Record<string, string[]>;
+  /** set only when type is "poll" */
+  poll?: PollData | null;
   /** set when this message answers another one */
-  replyTo?: { id: string; name: string; text: string; type: "text" | "image" } | null;
+  replyTo?: { id: string; name: string; text: string; type: "text" | "image" | "poll" } | null;
   /** original author's name when the message was forwarded */
   forwardedFrom?: string | null;
 }
