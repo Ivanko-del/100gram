@@ -1,26 +1,36 @@
 import { Fragment, ReactNode } from "react";
 
-const MENTION_RE = /@[a-zA-Z0-9_]{3,32}/g;
+const MENTION_SRC = "@[a-zA-Z0-9_]{3,32}";
+const URL_SRC = "(?:https?://|www\\.)[^\\s<]+[^\\s<.,:;!?'\")\\]]";
+const MENTION_RE = new RegExp(`^${MENTION_SRC}$`);
+const URL_RE = new RegExp(`^${URL_SRC}$`);
+const TOKEN_RE = new RegExp(`(${MENTION_SRC}|${URL_SRC})`, "g");
 
-/** Splits message text on `@username`-looking tokens and wraps them in a
- * highlighted span - purely cosmetic (no lookup against real members), so
- * it needs no extra data on the message and works offline/retroactively on
- * old messages. */
+/** Splits message text on `@username`-looking tokens and bare URLs, wrapping
+ * mentions in a highlighted span and URLs in a clickable link - purely
+ * cosmetic/offline (no lookup against real members), so it works
+ * retroactively on old messages without extra data on the message. */
 export function renderWithMentions(text: string): ReactNode {
-  const parts = text.split(MENTION_RE);
-  const matches = text.match(MENTION_RE) ?? [];
-  if (matches.length === 0) return text;
+  const parts = text.split(TOKEN_RE);
+  if (parts.length <= 1) return text;
 
-  const nodes: ReactNode[] = [];
-  parts.forEach((part, i) => {
-    if (part) nodes.push(<Fragment key={`t${i}`}>{part}</Fragment>);
-    if (i < matches.length) {
-      nodes.push(
-        <span className="mention" key={`m${i}`}>
-          {matches[i]}
+  return parts.map((part, i) => {
+    if (!part) return null;
+    if (MENTION_RE.test(part)) {
+      return (
+        <span className="mention" key={i}>
+          {part}
         </span>
       );
     }
+    if (URL_RE.test(part)) {
+      const href = part.startsWith("www.") ? `https://${part}` : part;
+      return (
+        <a className="message-link" href={href} key={i} target="_blank" rel="noopener noreferrer">
+          {part}
+        </a>
+      );
+    }
+    return <Fragment key={i}>{part}</Fragment>;
   });
-  return nodes;
 }

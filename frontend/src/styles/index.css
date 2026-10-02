@@ -460,7 +460,9 @@ textarea {
 
 .drawer-item-icon {
   width: 26px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 20px;
 }
 
@@ -1308,6 +1310,8 @@ textarea {
 }
 
 .back-btn {
+  display: flex;
+  align-items: center;
   color: var(--accent);
   font-size: 14px;
   text-align: left;
@@ -1344,6 +1348,8 @@ textarea {
 }
 
 .settings-nav nav button {
+  display: flex;
+  align-items: center;
   text-align: left;
   background: none;
   border: none;
@@ -2766,6 +2772,9 @@ textarea {
 }
 
 .message-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 9px 12px;
   border: none;
   border-radius: 8px;
@@ -2920,6 +2929,86 @@ textarea {
 .mention {
   color: var(--accent);
   font-weight: 600;
+}
+
+.message-link {
+  color: var(--accent);
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.message-link:hover {
+  opacity: 0.85;
+}
+
+/* SVG icons swapped in for emoji so chrome looks the same on every device -
+   this keeps them vertically centered next to text without per-use tweaks */
+.inline-icon {
+  display: inline-flex;
+  vertical-align: -3px;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.title-prefix-icon {
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-right: 4px;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.message-image {
+  cursor: zoom-in;
+}
+
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+  animation: lightbox-fade-in 0.15s ease-out;
+}
+
+@keyframes lightbox-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.lightbox-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  cursor: default;
+}
+
+.lightbox-close {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+}
+
+.lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .chat-search-bar {

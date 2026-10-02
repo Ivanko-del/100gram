@@ -1,4 +1,21 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
+import {
+  BarChart3,
+  Check,
+  CheckCheck,
+  Copy,
+  Image as ImageIcon,
+  MoreHorizontal,
+  Pencil,
+  Pin,
+  PinOff,
+  Reply,
+  Forward as ForwardIcon,
+  SmilePlus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { REACTIONS_FREE, REACTIONS_PREMIUM } from "../constants";
 import { ChatMessage } from "../types";
 import { renderWithMentions } from "../utils/mentions";
@@ -59,6 +76,7 @@ export default function MessageBubble({
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const reactions = Object.entries(message.reactions ?? {}).filter(([, uids]) => uids.length > 0);
 
   function onDeleteClick() {
@@ -83,13 +101,55 @@ export default function MessageBubble({
           <button type="button" className="message-quote" onClick={() => onJump?.(message.replyTo!.id)}>
             <span className="message-quote-name">{message.replyTo.name}</span>
             <span className="message-quote-text">
-              {message.replyTo.type === "image" ? "📷 Фото" : message.replyTo.type === "poll" ? `📊 ${message.replyTo.text}` : message.replyTo.text}
+              {message.replyTo.type === "image" ? (
+                <>
+                  <ImageIcon size={13} className="inline-icon" /> Фото
+                </>
+              ) : message.replyTo.type === "poll" ? (
+                <>
+                  <BarChart3 size={13} className="inline-icon" /> {message.replyTo.text}
+                </>
+              ) : (
+                message.replyTo.text
+              )}
             </span>
           </button>
         )}
-        {isPinned && <div className="message-pinned-tag">📌 Закріплено</div>}
+        {isPinned && (
+          <div className="message-pinned-tag">
+            <Pin size={11} className="inline-icon" /> Закріплено
+          </div>
+        )}
         {message.type === "image" ? (
-          <img className="message-image" src={message.content} alt="" loading="lazy" />
+          <>
+            <img
+              className="message-image"
+              src={message.content}
+              alt=""
+              loading="lazy"
+              onClick={() => setLightboxOpen(true)}
+            />
+            {lightboxOpen &&
+              createPortal(
+                <div className="lightbox-overlay" onClick={() => setLightboxOpen(false)}>
+                  <button
+                    type="button"
+                    className="lightbox-close"
+                    onClick={() => setLightboxOpen(false)}
+                    aria-label="Закрити"
+                  >
+                    <X size={26} />
+                  </button>
+                  <img
+                    className="lightbox-image"
+                    src={message.content}
+                    alt=""
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>,
+                document.body
+              )}
+          </>
         ) : message.type === "poll" && message.poll ? (
           <PollView poll={message.poll} myUid={myUid} onVote={(idx) => onVote?.(message, idx)} />
         ) : editing ? (
@@ -132,39 +192,51 @@ export default function MessageBubble({
           {formatTime(message.createdAt)}
           {isOwn && peerReadAt !== undefined && (
             <span className={`message-ticks ${peerReadAt && new Date(peerReadAt) >= new Date(message.createdAt) ? "read" : ""}`}>
-              {peerReadAt && new Date(peerReadAt) >= new Date(message.createdAt) ? "✓✓" : "✓"}
+              {peerReadAt && new Date(peerReadAt) >= new Date(message.createdAt) ? <CheckCheck size={14} /> : <Check size={14} />}
             </span>
           )}
         </div>
         {onReact && (
           <button type="button" className="message-react-btn" onClick={() => { setPicking((v) => !v); setMenuOpen(false); }} title="Реакція">
-            ☺
+            <SmilePlus size={14} />
           </button>
         )}
         {(onReply || onForward || onEdit || canPin) && (
           <button type="button" className="message-react-btn message-more-btn" onClick={() => { setMenuOpen((v) => !v); setPicking(false); }} title="Дії">
-            ⋯
+            <MoreHorizontal size={14} />
           </button>
         )}
         {menuOpen && (
           <div className={`message-menu ${isOwn ? "own" : ""}`}>
             {onReply && (
-              <button type="button" onClick={() => { setMenuOpen(false); onReply(message); }}>↩ Відповісти</button>
+              <button type="button" onClick={() => { setMenuOpen(false); onReply(message); }}>
+                <Reply size={15} /> Відповісти
+              </button>
             )}
             {onEdit && isOwn && message.type === "text" && (
-              <button type="button" onClick={() => { setMenuOpen(false); setDraft(message.content); setEditing(true); }}>✎ Редагувати</button>
+              <button type="button" onClick={() => { setMenuOpen(false); setDraft(message.content); setEditing(true); }}>
+                <Pencil size={15} /> Редагувати
+              </button>
             )}
             {onForward && (
-              <button type="button" onClick={() => { setMenuOpen(false); onForward(message); }}>↪ Переслати</button>
+              <button type="button" onClick={() => { setMenuOpen(false); onForward(message); }}>
+                <ForwardIcon size={15} /> Переслати
+              </button>
             )}
             {canPin && !isPinned && onPin && (
-              <button type="button" onClick={() => { setMenuOpen(false); onPin(message); }}>📌 Закріпити</button>
+              <button type="button" onClick={() => { setMenuOpen(false); onPin(message); }}>
+                <Pin size={15} /> Закріпити
+              </button>
             )}
             {canPin && isPinned && onUnpin && (
-              <button type="button" onClick={() => { setMenuOpen(false); onUnpin(); }}>📌 Відкріпити</button>
+              <button type="button" onClick={() => { setMenuOpen(false); onUnpin(); }}>
+                <PinOff size={15} /> Відкріпити
+              </button>
             )}
             {message.type === "text" && (
-              <button type="button" onClick={() => { setMenuOpen(false); navigator.clipboard?.writeText(message.content).catch(() => {}); }}>⧉ Копіювати</button>
+              <button type="button" onClick={() => { setMenuOpen(false); navigator.clipboard?.writeText(message.content).catch(() => {}); }}>
+                <Copy size={15} /> Копіювати
+              </button>
             )}
           </div>
         )}
@@ -209,7 +281,7 @@ export default function MessageBubble({
             onClick={onDeleteClick}
             title={confirming ? "Натисни ще раз, щоб підтвердити" : "Видалити повідомлення"}
           >
-            {confirming ? "Точно?" : "🗑"}
+            {confirming ? "Точно?" : <Trash2 size={13} />}
           </button>
         )}
       </div>
@@ -224,7 +296,9 @@ function PollView({ poll, myUid, onVote }: { poll: NonNullable<ChatMessage["poll
 
   return (
     <div className="poll">
-      <div className="poll-question">📊 {poll.question}</div>
+      <div className="poll-question">
+        <BarChart3 size={15} className="inline-icon" /> {poll.question}
+      </div>
       {poll.options.map((option, i) => {
         const pct = total > 0 ? Math.round((counts[i] / total) * 100) : 0;
         const mine = i === myIndex;

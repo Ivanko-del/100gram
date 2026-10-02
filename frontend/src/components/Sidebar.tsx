@@ -1,6 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  Archive,
+  ArrowLeft,
+  Bell,
+  BellOff,
+  Bookmark,
+  Crown,
+  EyeOff,
+  LifeBuoy,
+  Lock,
+  LogOut,
+  Megaphone,
+  Moon,
+  Pin,
+  Plus,
+  Settings as SettingsIcon,
+  Sun,
+  Trash2,
+  Unlock,
+  Users,
+  Wallet,
+} from "lucide-react";
+import {
   DataError,
   ensureSavedChat,
   hideChatForMe,
@@ -293,7 +315,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
               }}
               aria-label="Назад"
             >
-              ←
+              <ArrowLeft size={22} />
             </button>
             <h1 className="sidebar-title">{showVault ? "Приховані чати" : "Архів чатів"}</h1>
             <span className="header-icon-spacer" />
@@ -340,7 +362,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                 isPremium={user?.isPremium}
               />
               <button className="header-icon-btn drawer-theme-btn" onClick={toggleTheme} aria-label="Змінити тему">
-                {theme === "dark" ? "☀️" : "🌙"}
+                {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
               </button>
             </div>
             <div className="drawer-name">
@@ -356,10 +378,10 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                   setShowNewChatModal(true);
                 }}
               >
-                <span className="drawer-item-icon">👥</span>Нова група або канал
+                <span className="drawer-item-icon"><Users size={20} /></span>Нова група або канал
               </button>
               <button className="drawer-item" onClick={openSaved}>
-                <span className="drawer-item-icon">🔖</span>Збережене
+                <span className="drawer-item-icon"><Bookmark size={20} /></span>Збережене
               </button>
               <button
                 className="drawer-item"
@@ -368,7 +390,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                   setShowArchive(true);
                 }}
               >
-                <span className="drawer-item-icon">🗄️</span>Архів чатів
+                <span className="drawer-item-icon"><Archive size={20} /></span>Архів чатів
                 {archivedChats.length > 0 && <span className="drawer-item-badge">{archivedChats.length}</span>}
               </button>
               <button
@@ -378,26 +400,26 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                   setShowVault(true);
                 }}
               >
-                <span className="drawer-item-icon">🙈</span>Приховані чати
+                <span className="drawer-item-icon"><EyeOff size={20} /></span>Приховані чати
                 {lock.hidden.length > 0 && <span className="drawer-item-badge">{lock.hidden.length}</span>}
               </button>
               {!isSiteAdmin(user?.username) && (
                 <button className="drawer-item" onClick={openSupport}>
-                  <span className="drawer-item-icon">🆘</span>Підтримка
+                  <span className="drawer-item-icon"><LifeBuoy size={20} /></span>Підтримка
                 </button>
               )}
               <button className="drawer-item" onClick={() => goSettings("wallet")}>
-                <span className="drawer-item-icon">🥃</span>Гаманець
+                <span className="drawer-item-icon"><Wallet size={20} /></span>Гаманець
                 <span className="drawer-item-badge">{user?.grams ?? 0}</span>
               </button>
               <button className="drawer-item" onClick={() => goSettings("premium")}>
-                <span className="drawer-item-icon">👑</span>Преміум
+                <span className="drawer-item-icon"><Crown size={20} /></span>Преміум
               </button>
               <button className="drawer-item" onClick={() => goSettings()}>
-                <span className="drawer-item-icon">⚙️</span>Налаштування
+                <span className="drawer-item-icon"><SettingsIcon size={20} /></span>Налаштування
               </button>
               <button className="drawer-item drawer-item-danger" onClick={logout}>
-                <span className="drawer-item-icon">🚪</span>Вийти
+                <span className="drawer-item-icon"><LogOut size={20} /></span>Вийти
               </button>
             </div>
           </nav>
@@ -440,7 +462,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
         <div className="chat-list-inner">
           {archiveRowVisible && (
             <button className="chat-list-item archive-row" onClick={() => setShowArchive(true)}>
-              <span className="archive-row-icon">🗄️</span>
+              <span className="archive-row-icon"><Archive size={22} /></span>
               <span className="archive-row-label">Архів чатів</span>
               <span className="archive-row-count">{archivedChats.length}</span>
             </button>
@@ -484,19 +506,25 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
               <div className="chat-list-item-body">
                 <div className="chat-list-item-top">
                   <span className="chat-name">
-                    {isLocked(chat.id) ? "🔒 " : ""}
-                    {(user?.mutedChats ?? []).includes(chat.id) ? "🔕 " : ""}
-                    {chat.isChannel ? "📢 " : chat.isGroup ? "👥 " : ""}
+                    {isLocked(chat.id) && <Lock size={13} className="inline-icon" />}
+                    {(user?.mutedChats ?? []).includes(chat.id) && <BellOff size={13} className="inline-icon" />}
+                    {chat.isChannel ? <Megaphone size={13} className="inline-icon" /> : chat.isGroup ? <Users size={13} className="inline-icon" /> : null}
                     <UserName name={chat.name} emoji={chat.emojiStatus} color={chat.nameColor} />
                   </span>
                   <span className="chat-time">
-                    {pinned.includes(chat.id) && <span className="chat-pin" aria-label="Закріплено">📌</span>}
+                    {pinned.includes(chat.id) && <Pin size={12} className="chat-pin" aria-label="Закріплено" />}
                     {chat.lastMessage && formatTime(chat.lastMessage.createdAt)}
                   </span>
                 </div>
                 <div className="chat-list-item-row">
                   <div className="chat-list-item-bottom">
-                    {isLocked(chat.id) && !unlocked ? "🔒 Чат заблоковано" : chat.lastMessage?.content ?? "Немає повідомлень"}
+                    {isLocked(chat.id) && !unlocked ? (
+                      <>
+                        <Lock size={13} className="inline-icon" /> Чат заблоковано
+                      </>
+                    ) : (
+                      chat.lastMessage?.content ?? "Немає повідомлень"
+                    )}
                   </div>
                   {unreadCounts[chat.id] > 0 && chat.id !== activeChatId && (
                     <span className={`unread-badge ${(user?.mutedChats ?? []).includes(chat.id) ? "muted" : ""}`}>
@@ -550,7 +578,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                   runChatAction(() => setChatPinned(user.id, menuChat.id, !pinned.includes(menuChat.id)));
                 }}
               >
-                <span className="drawer-item-icon">📌</span>
+                <span className="drawer-item-icon"><Pin size={20} /></span>
                 {pinned.includes(menuChat.id) ? "Відкріпити" : "Закріпити"}
               </button>
             )}
@@ -563,14 +591,14 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                 )
               }
             >
-              <span className="drawer-item-icon">🗄️</span>
+              <span className="drawer-item-icon"><Archive size={20} /></span>
               {archived.includes(menuChat.id) ? "Повернути з архіву" : "В архів"}
             </button>
             <button
               className="drawer-item"
               onClick={() => runChatAction(() => setChatMutedForMe(user.id, menuChat.id, !(user.mutedChats ?? []).includes(menuChat.id)))}
             >
-              <span className="drawer-item-icon">{(user.mutedChats ?? []).includes(menuChat.id) ? "🔔" : "🔕"}</span>
+              <span className="drawer-item-icon">{(user.mutedChats ?? []).includes(menuChat.id) ? <Bell size={20} /> : <BellOff size={20} />}</span>
               {(user.mutedChats ?? []).includes(menuChat.id) ? "Увімкнути сповіщення" : "Вимкнути сповіщення"}
             </button>
             <button
@@ -582,7 +610,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                 setMenuChat(null);
               }}
             >
-              <span className="drawer-item-icon">{isLocked(menuChat.id) ? "🔓" : "🔒"}</span>
+              <span className="drawer-item-icon">{isLocked(menuChat.id) ? <Unlock size={20} /> : <Lock size={20} />}</span>
               {isLocked(menuChat.id) ? "Зняти блокування" : "Заблокувати паролем"}
             </button>
             <button
@@ -597,7 +625,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                 setMenuChat(null);
               }}
             >
-              <span className="drawer-item-icon">🙈</span>
+              <span className="drawer-item-icon"><EyeOff size={20} /></span>
               {lock.hidden.includes(menuChat.id) ? "Показати в списку" : "Приховати"}
             </button>
             <button
@@ -607,7 +635,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                 setMenuChat(null);
               }}
             >
-              <span className="drawer-item-icon">🗑️</span>Видалити чат
+              <span className="drawer-item-icon"><Trash2 size={20} /></span>Видалити чат
             </button>
           </div>
         </div>
@@ -642,7 +670,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
         title="Нова група або канал"
         aria-label="Нова група або канал"
       >
-        ＋
+        <Plus size={26} />
       </button>
 
     </aside>

@@ -1,6 +1,21 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
+  ArrowLeft,
+  Bell,
+  Cake,
+  Clock,
+  CornerDownLeft,
+  Crown,
+  LayoutList,
+  Lock,
+  MessageSquare,
+  Palette,
+  Shield,
+  User as UserIcon,
+  Wallet,
+} from "lucide-react";
+import {
   DataError,
   buyPremium,
   changePassword,
@@ -95,7 +110,7 @@ export default function SettingsPage() {
     <div className={`settings-layout ${tabOpened ? "mobile-show-detail" : ""}`}>
       <aside className="settings-nav">
         <button className="icon-btn back-btn" onClick={() => navigate("/")}>
-          ← Назад до чатів
+          <ArrowLeft size={18} className="inline-icon" /> Назад до чатів
         </button>
         <button type="button" className="settings-profile-preview" onClick={() => setShowOwnProfile(true)}>
           <Avatar name={user.displayName} color={user.avatarColor} photoUrl={user.avatarUrl} size={72} isPremium={user.isPremium} />
@@ -106,26 +121,26 @@ export default function SettingsPage() {
         {showOwnProfile && <UserProfileModal uid={user.id} onClose={() => setShowOwnProfile(false)} />}
         <nav>
           <button className={tab === "profile" ? "active" : ""} onClick={() => openTab("profile")}>
-            👤 Профіль
+            <UserIcon size={17} className="inline-icon" /> Профіль
           </button>
           <button className={tab === "appearance" ? "active" : ""} onClick={() => openTab("appearance")}>
-            🎨 Вигляд
+            <Palette size={17} className="inline-icon" /> Вигляд
           </button>
           <button className={tab === "chats" ? "active" : ""} onClick={() => openTab("chats")}>
-            💬 Чати і сповіщення
+            <MessageSquare size={17} className="inline-icon" /> Чати і сповіщення
           </button>
           <button className={tab === "privacy" ? "active" : ""} onClick={() => openTab("privacy")}>
-            🛡️ Конфіденційність
+            <Shield size={17} className="inline-icon" /> Конфіденційність
           </button>
           <div className="settings-nav-divider">Гаманець і підписка</div>
           <button className={tab === "wallet" ? "active" : ""} onClick={() => openTab("wallet")}>
-            🥃 Гаманець · {user.grams} ГРАМ
+            <Wallet size={17} className="inline-icon" /> Гаманець · {user.grams} ГРАМ
           </button>
           <button className={tab === "premium" ? "active" : ""} onClick={() => openTab("premium")}>
-            ⭐ Преміум
+            <Crown size={17} className="inline-icon" /> Преміум
           </button>
           <button className={tab === "account" ? "active" : ""} onClick={() => openTab("account")}>
-            🔒 Акаунт
+            <Lock size={17} className="inline-icon" /> Акаунт
           </button>
         </nav>
         <button className="logout-btn" onClick={() => logout()}>
@@ -135,7 +150,7 @@ export default function SettingsPage() {
 
       <main className="settings-content">
         <button className="mobile-back-btn settings-mobile-back" onClick={() => setTabOpened(false)}>
-          ← Налаштування
+          <ArrowLeft size={16} className="inline-icon" /> Налаштування
         </button>
         {tab === "profile" && <ProfileTab user={user} />}
         {tab === "appearance" && <AppearanceTab user={user} />}
@@ -488,7 +503,7 @@ function AppearanceTab({ user }: TabProps) {
       {premiumHint && <p className="settings-hint">Ці варіанти доступні з преміумом — дивись вкладку «Преміум» ⭐</p>}
 
       <label className="switch-row">
-        <span>📋 Компактний список чатів</span>
+        <span><LayoutList size={16} className="inline-icon" /> Компактний список чатів</span>
         <input
           type="checkbox"
           checked={compact}
@@ -558,13 +573,13 @@ function ChatsTab() {
 
       <h3>Сповіщення</h3>
       <label className="switch-row">
-        <span>🔔 Звук при новому повідомленні</span>
+        <span><Bell size={16} className="inline-icon" /> Звук при новому повідомленні</span>
         <input type="checkbox" checked={soundOn} onChange={toggleSound} />
       </label>
 
       <h3>Надсилання</h3>
       <label className="switch-row">
-        <span>⏎ Enter надсилає повідомлення</span>
+        <span><CornerDownLeft size={16} className="inline-icon" /> Enter надсилає повідомлення</span>
         <input
           type="checkbox"
           checked={enterSends}
@@ -608,14 +623,14 @@ function PrivacyTab({ user }: TabProps) {
     <div className="settings-panel">
       <h2>Конфіденційність</h2>
       <label className="switch-row">
-        <span>🎂 Ховати дату народження від інших</span>
+        <span><Cake size={16} className="inline-icon" /> Ховати дату народження від інших</span>
         <input type="checkbox" checked={hideBirth} onChange={(e) => toggleBirth(e.target.checked)} />
       </label>
       <p className="settings-hint">
         Дату народження (якщо вказана) бачать усі в твоєму профілі. Увімкни, щоб вона лишалась тільки в тебе.
       </p>
       <label className="switch-row">
-        <span>🕒 Ховати, коли я був(ла) в мережі</span>
+        <span><Clock size={16} className="inline-icon" /> Ховати, коли я був(ла) в мережі</span>
         <input
           type="checkbox"
           checked={!!user.hideLastSeen}
@@ -1315,7 +1330,7 @@ function AccountTab({ user }: TabProps) {
         <div className="admin-controls">
           <h3>Адмін-панель</h3>
           <label className="switch-row">
-            <span>👑 Показувати бейдж адміністратора</span>
+            <span><Crown size={16} className="inline-icon" /> Показувати бейдж адміністратора</span>
             <input type="checkbox" checked={showAdminBadge} onChange={toggleAdminBadge} disabled={savingAdminBadge} />
           </label>
         </div>

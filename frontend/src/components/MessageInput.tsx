@@ -1,4 +1,5 @@
 import { ChangeEvent, FormEvent, KeyboardEvent, useRef, useState } from "react";
+import { BarChart3, Image as ImageIcon, Send, X } from "lucide-react";
 import { DataError } from "../data/firestore-api";
 import { compressImageToDataUrl } from "../utils/image";
 import { isEnterSends } from "../utils/prefs";
@@ -131,7 +132,7 @@ export default function MessageInput({ onSend, onSendImage, onSendPoll, onTyping
             Надіслати
           </button>
           <button type="button" className="btn-ghost" onClick={() => setShowGifInput(false)}>
-            ✕
+            <X size={16} />
           </button>
         </form>
       )}
@@ -158,7 +159,7 @@ export default function MessageInput({ onSend, onSendImage, onSendPoll, onTyping
                   aria-label="Видалити варіант"
                   onClick={() => setPollOptions((prev) => prev.filter((_, j) => j !== i))}
                 >
-                  ✕
+                  <X size={16} />
                 </button>
               )}
             </div>
@@ -180,7 +181,7 @@ export default function MessageInput({ onSend, onSendImage, onSendPoll, onTyping
       )}
       <form className="message-input-bar" onSubmit={submit}>
         <label className="icon-btn message-media-btn" title="Надіслати фото">
-          {uploadingPhoto ? "…" : "🖼️"}
+          {uploadingPhoto ? "…" : <ImageIcon size={17} />}
           <input type="file" accept="image/*" hidden disabled={disabled || uploadingPhoto} onChange={onPickPhoto} />
         </label>
         <button
@@ -200,7 +201,7 @@ export default function MessageInput({ onSend, onSendImage, onSendPoll, onTyping
             disabled={disabled}
             onClick={() => setShowPollForm((v) => !v)}
           >
-            📊
+            <BarChart3 size={17} />
           </button>
         )}
         <textarea
@@ -218,7 +219,7 @@ export default function MessageInput({ onSend, onSendImage, onSendPoll, onTyping
           disabled={disabled}
         />
         <button className="send-btn" type="submit" disabled={disabled || !value.trim()}>
-          ➤
+          <Send size={18} />
         </button>
       </form>
     </div>

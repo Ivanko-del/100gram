@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ArrowLeft, Megaphone, Pin, Search, Users, VolumeX, X } from "lucide-react";
 import {
   deleteMessage,
   editMessage,
@@ -52,6 +53,10 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const loadingOlder = useRef(false);
   const sentAt = useRef<number[]>([]);
+  const messageListRef = useRef<HTMLDivElement>(null);
+  // true until the freshly-opened chat has landed on its newest message -
+  // drives an instant jump instead of an animated smooth-scroll
+  const freshOpen = useRef(true);
 
   // a different chat: start from a clean slate
   useEffect(() => {
@@ -62,6 +67,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
     setReplyTo(null);
     setSearchOpen(false);
     setSearchQuery("");
+    freshOpen.current = true;
   }, [chat.id]);
 
   // live view of the newest `pageSize` messages
@@ -104,8 +110,32 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
       loadingOlder.current = false;
       return;
     }
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]);
+    // Depends on the `messages` array identity (not `.length`) - Firestore
+    // hands us a new array on every snapshot, so switching to a different
+    // chat that happens to load the same number of messages still scrolls.
+    const isFreshOpen = freshOpen.current;
+    if (messages.length > 0) freshOpen.current = false;
+    bottomRef.current?.scrollIntoView({ behavior: isFreshOpen ? "auto" : "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    // A photo lower in the list can still be loading when we land on the
+    // newest message; once it decodes it grows the page and leaves the view
+    // short of the real bottom, so snap back down whenever one finishes.
+    const list = messageListRef.current;
+    if (!list) return;
+    function isNearBottom() {
+      if (!list) return true;
+      return list.scrollHeight - list.scrollTop - list.clientHeight < 200;
+    }
+    function onImageLoad(e: Event) {
+      if ((e.target as HTMLElement).tagName === "IMG" && isNearBottom()) {
+        bottomRef.current?.scrollIntoView({ behavior: "auto" });
+      }
+    }
+    list.addEventListener("load", onImageLoad, true);
+    return () => list.removeEventListener("load", onImageLoad, true);
+  }, [chat.id]);
 
   useEffect(() => {
     return () => {
@@ -277,13 +307,17 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
     <section className="chat-window">
       <header className="chat-window-header">
         <button className="mobile-back-btn" onClick={() => navigate("/")} aria-label="Назад до чатів">
-          ←
+          <ArrowLeft size={22} />
         </button>
         <button type="button" className="chat-header-info" onClick={openHeaderInfo}>
           <Avatar name={chat.name} color={chat.avatarColor} photoUrl={chat.avatarUrl} icon={chat.isSaved ? "🔖" : undefined} />
           <div>
             <div className="chat-window-title">
-              {isChannel ? "📢 " : isGroup ? "👥 " : ""}
+              {isChannel ? (
+                <Megaphone size={15} className="title-prefix-icon" />
+              ) : isGroup ? (
+                <Users size={15} className="title-prefix-icon" />
+              ) : null}
               <UserName name={chat.name} emoji={chat.emojiStatus} color={chat.nameColor} />
             </div>
             <div className="chat-window-subtitle">{subtitle}</div>
@@ -291,17 +325,17 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
         </button>
         <span className="header-spacer" />
         <button type="button" className="header-icon-btn" onClick={() => { setSearchOpen((v) => !v); setSearchQuery(""); }} aria-label="Пошук у чаті">
-          🔍
+          <Search size={20} />
         </button>
       </header>
 
       {chat.pinnedMessageId && (
         <button type="button" className="pinned-banner" onClick={() => jumpTo(chat.pinnedMessageId!)}>
-          <span className="pinned-banner-icon">📌</span>
+          <Pin size={16} className="pinned-banner-icon" />
           <span className="pinned-banner-text">
             {pinnedMessage
               ? pinnedMessage.type === "image"
-                ? "📷 Фото"
+                ? "Фото"
                 : pinnedMessage.type === "poll"
                   ? pinnedMessage.poll?.question ?? "Опитування"
                   : pinnedMessage.content
@@ -318,7 +352,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
               }}
               aria-label="Відкріпити"
             >
-              ✕
+              <X size={14} />
             </span>
           )}
         </button>
@@ -349,7 +383,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
       )}
       {profileUid && <UserProfileModal uid={profileUid} onClose={() => setProfileUid(null)} />}
 
-      <div className="message-list">
+      <div className="message-list" ref={messageListRef}>
         {loading && <div className="empty-hint">Завантаження повідомлень…</div>}
         {!loading && messages.length === 0 && (
           <div className="empty-hint">
@@ -402,11 +436,11 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
           <div className="reply-bar-body">
             <span className="reply-bar-name">Відповідь для {replyTo.sender.displayName}</span>
             <span className="reply-bar-text">
-              {replyTo.type === "image" ? "📷 Фото" : replyTo.type === "poll" ? `📊 ${replyTo.content}` : replyTo.content}
+              {replyTo.type === "image" ? "Фото" : replyTo.type === "poll" ? replyTo.content : replyTo.content}
             </span>
           </div>
           <button type="button" className="icon-btn" onClick={() => setReplyTo(null)} aria-label="Скасувати відповідь">
-            ✕
+            <X size={18} />
           </button>
         </div>
       )}
@@ -421,7 +455,9 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
       ) : canPost ? (
         <MessageInput onSend={sendMessage} onSendImage={sendImage} onSendPoll={sendPoll} onTyping={handleTyping} disabled={!user} />
       ) : muted ? (
-        <div className="channel-readonly-note">🔇 Тебе заглушено {chat.mutedUids.includes(user?.id ?? "") ? "в цьому чаті" : ""}</div>
+        <div className="channel-readonly-note">
+          <VolumeX size={14} className="inline-icon" /> Тебе заглушено {chat.mutedUids.includes(user?.id ?? "") ? "в цьому чаті" : ""}
+        </div>
       ) : (
         <div className="channel-readonly-note">Публікувати в цьому каналі можуть лише адміни</div>
       )}
