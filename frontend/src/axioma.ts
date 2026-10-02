@@ -119,3 +119,24 @@ export async function depositToAxioma(amount: number, title: string): Promise<vo
     throw err instanceof AxiomaError ? err : new AxiomaError(err instanceof Error ? err.message : "Не вдалося зарахувати на картку Аксіоми");
   }
 }
+
+/** Debits the Аксіома card, then runs `credit` (the step that gives the player
+ * what they paid for). If `credit` fails the money is put back on the card,
+ * so a failure never leaves the player charged for nothing. */
+export async function chargeAxiomaThen(amount: number, title: string, credit: () => Promise<void>): Promise<void> {
+  await withdrawFromAxioma(amount, title);
+  try {
+    await credit();
+  } catch (err) {
+    const refunded = await depositToAxioma(amount, `Повернення: ${title}`).then(
+      () => true,
+      () => false
+    );
+    const reason = err instanceof Error && err.message ? ` (${err.message})` : "";
+    throw new AxiomaError(
+      refunded
+        ? `Не вдалося завершити операцію${reason}. Гроші повернуто на картку Аксіоми`
+        : `Не вдалося завершити операцію${reason}, і повернути гроші автоматично теж не вийшло — напиши в підтримку`
+    );
+  }
+}

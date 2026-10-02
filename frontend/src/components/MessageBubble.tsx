@@ -16,7 +16,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { REACTIONS_FREE, REACTIONS_PREMIUM } from "../constants";
+import { MAX_MESSAGE_LENGTH, REACTIONS_FREE, REACTIONS_PREMIUM } from "../constants";
 import { ChatMessage } from "../types";
 import { renderWithMentions } from "../utils/mentions";
 import UserName from "./UserName";
@@ -162,7 +162,7 @@ export default function MessageBubble({
               setEditing(false);
             }}
           >
-            <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} autoFocus />
+            <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} maxLength={MAX_MESSAGE_LENGTH} autoFocus />
             <div className="message-edit-actions">
               <button type="submit" className="btn-primary">Зберегти</button>
               <button type="button" className="btn-ghost" onClick={() => setEditing(false)}>Скасувати</button>

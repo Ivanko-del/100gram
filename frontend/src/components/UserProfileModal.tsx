@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getUserProfile, setGlobalMute, setUserBadge, startDirectChat, setUserBlocked } from "../data/firestore-api";
+import { DataError, getUserProfile, setGlobalMute, setUserBadge, startDirectChat, setUserBlocked } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
 import { BADGE_COLORS, PROFILE_BANNERS, isSiteAdmin } from "../constants";
 import { User } from "../types";
@@ -18,6 +18,7 @@ export default function UserProfileModal({ uid, onClose }: Props) {
   const [profile, setProfile] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [messageError, setMessageError] = useState<string | null>(null);
 
   const [badgeText, setBadgeText] = useState("");
   const [badgeColor, setBadgeColor] = useState(BADGE_COLORS[0]);
@@ -28,14 +29,16 @@ export default function UserProfileModal({ uid, onClose }: Props) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    getUserProfile(uid).then((p) => {
-      if (!cancelled) {
-        setProfile(p);
-        setBadgeText(p?.badge?.text ?? "");
-        setBadgeColor(p?.badge?.color ?? BADGE_COLORS[0]);
-        setLoading(false);
-      }
-    });
+    getUserProfile(uid)
+      .catch(() => null)
+      .then((p) => {
+        if (!cancelled) {
+          setProfile(p);
+          setBadgeText(p?.badge?.text ?? "");
+          setBadgeColor(p?.badge?.color ?? BADGE_COLORS[0]);
+          setLoading(false);
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -44,10 +47,13 @@ export default function UserProfileModal({ uid, onClose }: Props) {
   async function message() {
     if (!me || !profile) return;
     setStarting(true);
+    setMessageError(null);
     try {
       const chatId = await startDirectChat(me, profile.username);
       onClose();
       navigate(`/chat/${chatId}`);
+    } catch (err) {
+      setMessageError(err instanceof DataError ? err.message : "Не вдалося відкрити чат");
     } finally {
       setStarting(false);
     }
@@ -140,6 +146,7 @@ export default function UserProfileModal({ uid, onClose }: Props) {
                 {starting ? "Відкриття…" : "✉️ Написати повідомлення"}
               </button>
             )}
+            {messageError && <div className="auth-error">{messageError}</div>}
             {!isSelf && me && (
               <button
                 className="btn-ghost"

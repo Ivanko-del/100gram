@@ -83,7 +83,7 @@ export default function Register() {
         <form className="auth-form" onSubmit={onSubmit}>
           <label>
             Ім'я та прізвище
-            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Антон Коваль" />
+            <input value={displayName} maxLength={48} onChange={(e) => setDisplayName(e.target.value)} placeholder="Антон Коваль" />
           </label>
           <label>
             Username

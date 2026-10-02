@@ -42,7 +42,14 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if isSignedIn();
-      allow create: if isOwner(uid);
+      // A profile may only claim a username it has actually reserved: the
+      // reservation (usernames/{usernameLower} -> this uid) is written in the
+      // same transaction, hence getAfter(). Without this check anyone could
+      // create their profile with usernameLower "theivankoo" and thereby pass
+      // isSiteAdmin().
+      allow create: if isOwner(uid)
+        && request.resource.data.usernameLower is string
+        && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.usernameLower)).data.uid == uid;
       // Profile fields are self-editable. This does not stop a client from
       // rewriting its own `grams`/`isPremium` directly - real money-grade
       // integrity would need Cloud Functions to own those fields server-side.
@@ -203,14 +210,17 @@ service cloud.firestore {
             || (resource.data.senderUid == request.auth.uid
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["content", "editedAt"]))
           );
-        // Anyone may delete their own message; the site admin may delete
-        // any message anywhere, for moderation.
-        allow delete: if isSignedIn() && (resource.data.senderUid == request.auth.uid || isSiteAdmin());
+        // Anyone may delete their own message; the admins of a group/channel
+        // may clean up their chat, and the site admin may delete any message
+        // anywhere, for moderation.
+        allow delete: if isSignedIn()
+          && (resource.data.senderUid == request.auth.uid || isChatAdmin() || isSiteAdmin());
       }
 
       match /typing/{uid} {
         allow read: if isSignedIn() && request.auth.uid in chatData().memberUids;
-        allow write: if isOwner(uid);
+        // only members may leave typing marks in a chat
+        allow write: if isOwner(uid) && request.auth.uid in chatData().memberUids;
       }
     }
   }

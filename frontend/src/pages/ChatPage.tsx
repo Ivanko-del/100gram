@@ -114,7 +114,10 @@ export default function ChatPage() {
 
   // Chats that predate read tracking get a silent "read now" mark, so old
   // history doesn't light up as unread.
-  const initKey = chats.filter((c) => user && !c.readBy[user.id]).map((c) => c.id).join(",");
+  const initKey = chats
+    .filter((c) => user && !c.readBy[user.id] && Object.keys(c.readBy).length === 0)
+    .map((c) => c.id)
+    .join(",");
   useEffect(() => {
     if (!user || !initKey) return;
     initKey.split(",").forEach((id) => markChatRead(id, user.id));

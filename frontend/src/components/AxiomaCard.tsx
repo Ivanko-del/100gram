@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { AxiomaError, AXIOMA_EXCHANGE_RATE, AXIOMA_SITE_URL, withdrawFromAxioma } from "../axioma";
+import { AxiomaError, AXIOMA_EXCHANGE_RATE, AXIOMA_SITE_URL, chargeAxiomaThen } from "../axioma";
 import { topUpGramsFromAxioma } from "../data/firestore-api";
 import { useAxioma } from "../hooks/useAxioma";
 import { User } from "../types";
@@ -54,15 +54,15 @@ export default function AxiomaCard({ user }: Props) {
     e.preventDefault();
     setTopupError(null);
     setTopupSuccess(null);
-    if (!(topupAmount > 0)) {
-      setTopupError("Вкажи суму більшу за 0");
+    // whole numbers only: a fraction would be charged in full but round down in ГРАМ
+    if (!Number.isInteger(topupAmount) || topupAmount < 1) {
+      setTopupError("Вкажи цілу суму від 1");
       return;
     }
     setToppingUp(true);
     try {
-      await withdrawFromAxioma(topupAmount, "Поповнення ГРАМ у 100 ГРАМ");
       const grams = Math.round(topupAmount * AXIOMA_EXCHANGE_RATE);
-      await topUpGramsFromAxioma(user.id, grams, topupAmount);
+      await chargeAxiomaThen(topupAmount, "Поповнення ГРАМ у 100 ГРАМ", () => topUpGramsFromAxioma(user.id, grams, topupAmount));
       setTopupSuccess(`+${grams} ГРАМ зараховано ✓`);
       setTimeout(() => setTopupSuccess(null), 3000);
     } catch (err) {

@@ -279,9 +279,12 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
 }
 
 export function subscribeUser(uid: string, cb: (user: User | null) => void) {
-  return onSnapshot(doc(db, "users", uid), (snap) => {
-    cb(snap.exists() ? mapUser(snap) : null);
-  });
+  return onSnapshot(
+    doc(db, "users", uid),
+    (snap) => cb(snap.exists() ? mapUser(snap) : null),
+    // a denied/failed listener must not leave the app on its loading screen
+    () => cb(null)
+  );
 }
 
 export async function updateProfile(
@@ -502,11 +505,15 @@ export function subscribePublicProfile(uid: string, cb: (u: User | null) => void
 
 export function subscribeChats(myUid: string, cb: (chats: ChatSummary[]) => void) {
   const qy = query(collection(db, "chats"), where("memberUids", "array-contains", myUid));
-  return onSnapshot(qy, (snap) => {
-    const chats = snap.docs.map((d) => mapChat(d, myUid));
-    chats.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    cb(chats);
-  });
+  return onSnapshot(
+    qy,
+    (snap) => {
+      const chats = snap.docs.map((d) => mapChat(d, myUid));
+      chats.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      cb(chats);
+    },
+    () => cb([])
+  );
 }
 
 export async function startDirectChat(me: User, otherUsername: string): Promise<string> {
@@ -633,6 +640,8 @@ export async function joinChat(me: User, chatId: string, inviteCode?: string | n
   } catch {
     throw new DataError("Не вдалося приєднатися — посилання недійсне або чат закритий");
   }
+  // a newcomer starts "caught up", the earlier history is not an unread pile
+  await markChatRead(chatId, me.id);
 }
 
 /** Admin-only: makes a group/channel public (searchable, anyone can join) or
@@ -760,9 +769,12 @@ function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, c
  * to reveal older history. */
 export function subscribeMessages(chatId: string, cb: (messages: ChatMessage[]) => void, count = 60) {
   const qy = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc"), limit(count));
-  return onSnapshot(qy, (snap) => {
-    cb(snap.docs.map((d) => mapMessage(d, chatId)).reverse());
-  });
+  return onSnapshot(
+    qy,
+    (snap) => cb(snap.docs.map((d) => mapMessage(d, chatId)).reverse()),
+    // e.g. kicked out of the chat while it is open: show it empty, not "loading" forever
+    () => cb([])
+  );
 }
 
 export interface SendExtras {
@@ -878,9 +890,28 @@ export async function editMessage(
 }
 
 /** Deletes a message. Firestore rules allow this for the message's own
- * sender, or the site admin deleting anywhere as moderation. */
-export async function deleteMessage(chatId: string, messageId: string): Promise<void> {
+ * sender, the chat's admins, or the site admin deleting anywhere as moderation.
+ * `newLast` is what the chat list preview should show afterwards when the
+ * deleted message was the newest one (`null` = the chat is now empty); leave
+ * it `undefined` when the preview does not change. */
+export async function deleteMessage(
+  chatId: string,
+  messageId: string,
+  newLast?: { type: "text" | "image" | "poll"; content: string; senderId: string; createdAt: string } | null
+): Promise<void> {
   await deleteDoc(doc(db, "chats", chatId, "messages", messageId));
+  if (newLast === undefined) return;
+  // Best effort and separate from the delete: a moderator who is not a member
+  // of the chat may delete but not touch the chat document.
+  await updateDoc(doc(db, "chats", chatId), {
+    lastMessage: newLast
+      ? {
+          content: lastMessagePreview(newLast.type, newLast.content),
+          senderUid: newLast.senderId,
+          createdAt: Timestamp.fromDate(new Date(newLast.createdAt)),
+        }
+      : null,
+  }).catch(() => {});
 }
 
 /* ---------------- typing indicator ---------------- */
@@ -897,15 +928,41 @@ export async function setTyping(chatId: string, uid: string, username: string, i
 }
 
 export function subscribeTyping(chatId: string, myUid: string, cb: (usernames: string[]) => void) {
-  return onSnapshot(collection(db, "chats", chatId, "typing"), (snap) => {
+  let entries: { username: string; at: number }[] = [];
+  let last: string | null = null;
+
+  // Re-evaluated on a timer as well as on every snapshot: someone who stops
+  // typing (or drops offline) produces no new snapshot, so without this the
+  // "typing…" label would stay on forever.
+  const emit = () => {
     const now = Date.now();
-    const names = snap.docs
-      .filter((d) => d.id !== myUid)
-      .map((d) => d.data() as { username: string; updatedAt: Timestamp | null })
-      .filter((t) => t.updatedAt && now - t.updatedAt.toDate().getTime() < TYPING_TTL_MS)
-      .map((t) => t.username);
+    const names = entries.filter((e) => now - e.at < TYPING_TTL_MS).map((e) => e.username);
+    const key = names.join("\n");
+    if (key === last) return;
+    last = key;
     cb(names);
-  });
+  };
+
+  const timer = window.setInterval(emit, 1000);
+  const unsub = onSnapshot(
+    collection(db, "chats", chatId, "typing"),
+    (snap) => {
+      entries = snap.docs
+        .filter((d) => d.id !== myUid)
+        .map((d) => d.data() as { username: string; updatedAt: Timestamp | null })
+        .filter((t) => t.updatedAt)
+        .map((t) => ({ username: t.username, at: t.updatedAt!.toDate().getTime() }));
+      emit();
+    },
+    () => {
+      entries = [];
+      emit();
+    }
+  );
+  return () => {
+    window.clearInterval(timer);
+    unsub();
+  };
 }
 
 /* ---------------- wallet ---------------- */
@@ -926,10 +983,13 @@ function mapTx(snap: { id: string; data: () => Record<string, unknown> }): Walle
 
 export function subscribeTransactions(uid: string, cb: (txs: WalletTransaction[]) => void) {
   const qy = query(collection(db, "users", uid, "transactions"), orderBy("createdAt", "desc"), limit(50));
-  return onSnapshot(qy, (snap) => cb(snap.docs.map(mapTx)));
+  return onSnapshot(qy, (snap) => cb(snap.docs.map(mapTx)), () => cb([]));
 }
 
 export async function transferGrams(fromUid: string, fromUsername: string, toUsername: string, amount: number, note: string | null) {
+  if (!Number.isInteger(amount) || amount < 1 || amount > 1_000_000) {
+    throw new DataError("Вкажи цілу суму від 1 до 1 000 000 ГРАМ");
+  }
   const toUsernameLower = normalizeUsername(toUsername);
   const unameSnap = await getDoc(doc(db, "usernames", toUsernameLower));
   if (!unameSnap.exists()) throw new DataError("Отримувача не знайдено");

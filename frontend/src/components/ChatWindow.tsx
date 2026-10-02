@@ -53,6 +53,9 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const loadingOlder = useRef(false);
   const sentAt = useRef<number[]>([]);
+  // when the "typing" doc was last written (0 = not typing), so we write it
+  // every couple of seconds instead of on every keystroke
+  const typingSentAt = useRef(0);
   const messageListRef = useRef<HTMLDivElement>(null);
   // true until the freshly-opened chat has landed on its newest message -
   // drives an instant jump instead of an animated smooth-scroll
@@ -67,6 +70,8 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
     setReplyTo(null);
     setSearchOpen(false);
     setSearchQuery("");
+    setTypingUsers([]);
+    typingSentAt.current = 0;
     freshOpen.current = true;
   }, [chat.id]);
 
@@ -253,6 +258,14 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
 
   function handleTyping(isTyping: boolean) {
     if (!user) return;
+    const now = Date.now();
+    if (isTyping) {
+      if (now - typingSentAt.current < 2500) return;
+      typingSentAt.current = now;
+    } else {
+      if (typingSentAt.current === 0) return;
+      typingSentAt.current = 0;
+    }
     setTyping(chat.id, user.id, user.displayName, isTyping).catch(() => {});
   }
 
@@ -271,7 +284,19 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
   }
 
   function handleDelete(messageId: string) {
-    deleteMessage(chat.id, messageId).catch((err) => setSendError(describeSendError(err)));
+    // deleting the newest message must also roll the chat-list preview back
+    const idx = messages.findIndex((m) => m.id === messageId);
+    const prev = messages[idx - 1];
+    // with a partly loaded history we cannot tell what came before, so leave the preview alone
+    const canRollBack = idx === messages.length - 1 && (!!prev || messages.length < pageSize);
+    const newLast = !canRollBack
+      ? undefined
+      : prev
+        ? { type: prev.type, content: prev.content, senderId: prev.sender.id, createdAt: prev.createdAt }
+        : null;
+    deleteMessage(chat.id, messageId, newLast).catch((err) => setSendError(describeSendError(err)));
+    // a deleted message must not stay behind as a dangling pinned banner
+    if (chat.pinnedMessageId === messageId && canPin) handleUnpin();
   }
 
   const query = searchQuery.trim().toLowerCase();
@@ -405,7 +430,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
               message={m}
               isOwn={isOwn}
               showSender={showSender}
-              canDelete={isOwn || isAppAdmin}
+              canDelete={isOwn || isAppAdmin || (isGroup && isAdmin)}
               onDelete={handleDelete}
               myUid={user?.id}
               isPremium={user?.isPremium}

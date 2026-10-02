@@ -27,7 +27,7 @@ export function useUnreadCounts(chats: ChatSummary[], myUid: string | undefined)
       }
       next[c.id] = 1; // show at least one until the exact count arrives
       pending.push(
-        countMessagesSince(c.id, c.readBy[myUid])
+        countMessagesSince(c.id, c.readBy[myUid] ?? new Date(0).toISOString())
           .then((n) => {
             cache.current.set(ck, Math.max(1, n));
             next[c.id] = Math.max(1, n);

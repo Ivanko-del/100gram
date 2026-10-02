@@ -44,7 +44,7 @@ import {
   transferGrams,
   updateProfile,
 } from "../data/firestore-api";
-import { AXIOMA_EXCHANGE_RATE, AxiomaError, withdrawFromAxioma } from "../axioma";
+import { AXIOMA_EXCHANGE_RATE, AxiomaError, chargeAxiomaThen } from "../axioma";
 import { useAuth } from "../context/AuthContext";
 import { useAxioma } from "../hooks/useAxioma";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
@@ -298,7 +298,6 @@ function ProfileTab({ user }: TabProps) {
   const [nameColor, setNameColor] = useState(user.nameColor ?? "");
   const [banner, setBanner] = useState(user.profileBanner ?? "");
   const [gifUrl, setGifUrl] = useState("");
-  const [premiumHint, setPremiumHint] = useState(false);
 
   async function applyGifAvatar() {
     const url = gifUrl.trim();
@@ -321,12 +320,17 @@ function ProfileTab({ user }: TabProps) {
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
+    const name = displayName.trim();
+    if (!name) {
+      setError("Ім'я не може бути порожнім");
+      return;
+    }
     setSaving(true);
     setError(null);
     setSaved(false);
     try {
       await updateProfile(user.id, {
-        displayName,
+        displayName: name,
         bio,
         avatarColor,
         birthDate: birthDate || null,
@@ -1126,8 +1130,9 @@ function PremiumTab({ user }: TabProps) {
     setError(null);
     setSuccess(null);
     try {
-      await withdrawFromAxioma(plan.price / AXIOMA_EXCHANGE_RATE, `Преміум 100 ГРАМ: ${plan.label}`);
-      await grantPremiumFromAxioma(user.id, plan);
+      await chargeAxiomaThen(plan.price / AXIOMA_EXCHANGE_RATE, `Преміум 100 ГРАМ: ${plan.label}`, () =>
+        grantPremiumFromAxioma(user.id, plan)
+      );
       setSuccess(`Преміум активовано карткою Аксіоми: ${plan.label} ✓`);
     } catch (e2) {
       setError(e2 instanceof AxiomaError || e2 instanceof DataError ? e2.message : "Не вдалося оплатити карткою Аксіоми");
