@@ -1,5 +1,5 @@
 import { FormEvent, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import type { ConfirmationResult } from "firebase/auth";
 import { useAuth } from "../context/AuthContext";
 import { firebaseConfigured } from "../firebase";
@@ -12,6 +12,7 @@ type Mode = "email" | "phone" | "reset";
 
 export default function Login() {
   const { login } = useAuth();
+  const location = useLocation();
   const [mode, setMode] = useState<Mode>("email");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -214,7 +215,7 @@ export default function Login() {
         <div ref={recaptchaRef} />
 
         <p className="auth-switch">
-          Немає акаунта? <Link to="/register">Зареєструватися</Link>
+          Немає акаунта? <Link to="/register" state={location.state}>Зареєструватися</Link>
         </p>
       </div>
     </div>

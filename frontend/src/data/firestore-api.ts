@@ -401,6 +401,8 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
     ),
     updatedAt: d.updatedAt ? tsToIso(d.updatedAt) : tsToIso(d.createdAt),
     pinnedMessageId: (d.pinnedMessageId as string) ?? null,
+    isPublic: !!d.isPublic,
+    inviteCode: (d.inviteCode as string) ?? null,
   };
 }
 
@@ -542,7 +544,8 @@ export async function createGroupChat(
   creator: User,
   name: string,
   memberUsernames: string[],
-  isChannel: boolean
+  isChannel: boolean,
+  isPublic = false
 ): Promise<string> {
   const trimmedName = name.trim();
   if (!trimmedName) throw new DataError("Вкажи назву");
@@ -574,11 +577,70 @@ export async function createGroupChat(
     memberUids,
     memberProfiles,
     adminUids: [creator.id],
+    isPublic,
+    // private chats are entered only through a link carrying this code
+    inviteCode: isPublic ? null : newInviteCode(),
     lastMessage: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
   return chatId;
+}
+
+function newInviteCode(): string {
+  return crypto.randomUUID().replace(/-/g, "");
+}
+
+/** Public groups/channels whose name or description contains `queryText`.
+ * Firestore has no substring search, so this pulls the public chats (a
+ * single-field equality query, no composite index needed) and filters here. */
+export async function searchPublicChats(queryText: string, myUid: string): Promise<ChatSummary[]> {
+  const q = queryText.trim().toLowerCase().replace(/^@/, "");
+  if (q.length < 2) return [];
+  const snap = await getDocs(query(collection(db, "chats"), where("isPublic", "==", true), limit(200)));
+  return snap.docs
+    .map((d) => mapChat(d, myUid))
+    .filter((c) => c.name.toLowerCase().includes(q) || (c.description ?? "").toLowerCase().includes(q))
+    .sort((a, b) => b.members.length - a.members.length)
+    .slice(0, 20);
+}
+
+/** What a non-member may see of a chat: only possible for public chats
+ * (rules deny the read for private ones, which is reported as `null`). */
+export async function getChatPreview(chatId: string, myUid: string): Promise<ChatSummary | null | "private"> {
+  try {
+    const snap = await getDoc(doc(db, "chats", chatId));
+    return snap.exists() ? mapChat(snap, myUid) : null;
+  } catch {
+    return "private";
+  }
+}
+
+/** Joins a group/channel yourself: allowed by the rules for public chats, and
+ * for private ones only when `inviteCode` matches the chat's own code. */
+export async function joinChat(me: User, chatId: string, inviteCode?: string | null): Promise<void> {
+  try {
+    await updateDoc(doc(db, "chats", chatId), {
+      memberUids: arrayUnion(me.id),
+      [`memberProfiles.${me.id}`]: { ...toMemberProfile(me), ...(inviteCode ? { joinCode: inviteCode } : {}) },
+    });
+  } catch {
+    throw new DataError("Не вдалося приєднатися — посилання недійсне або чат закритий");
+  }
+}
+
+/** Admin-only: makes a group/channel public (searchable, anyone can join) or
+ * private (link only). Going private makes sure there is an invite code. */
+export async function setChatPublic(chat: ChatSummary, isPublic: boolean): Promise<void> {
+  await updateDoc(doc(db, "chats", chat.id), {
+    isPublic,
+    ...(!isPublic && !chat.inviteCode ? { inviteCode: newInviteCode() } : {}),
+  });
+}
+
+/** Admin-only: replaces the invite code, so every previously shared link stops working. */
+export async function resetInviteCode(chatId: string): Promise<void> {
+  await updateDoc(doc(db, "chats", chatId), { inviteCode: newInviteCode() });
 }
 
 /**

@@ -1301,72 +1301,134 @@ textarea {
 .settings-nav {
   min-height: 0;
   overflow-y: auto;
-  background: var(--bg-sidebar);
+  background: var(--bg-app);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  padding: 16px;
-  gap: 16px;
+  padding: max(8px, env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));
+  gap: 6px;
 }
 
-.back-btn {
+.settings-nav-top {
   display: flex;
   align-items: center;
-  color: var(--accent);
-  font-size: 14px;
-  text-align: left;
+  min-height: 44px;
+  margin: 0 -6px;
 }
 
-.settings-profile-preview {
+.settings-hero {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 12px 0;
-  width: 100%;
+  gap: 4px;
+  padding: 0 0 14px;
+}
+
+.settings-hero-avatar {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.settings-hero-avatar-btn {
+  display: block;
+  padding: 0;
   background: none;
   border: none;
+  border-radius: 50%;
   cursor: pointer;
-  color: inherit;
-  font: inherit;
+}
+
+.settings-hero-camera {
+  position: absolute;
+  right: -4px;
+  bottom: -2px;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 3px solid var(--bg-app);
+  background: var(--accent-strong);
+  color: #fff;
+  cursor: pointer;
 }
 
 .settings-profile-name {
-  font-weight: 700;
-  font-size: 16px;
+  font-weight: 600;
+  font-size: 22px;
 }
 
 .settings-profile-username {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 15px;
 }
 
-.settings-nav nav {
+.settings-groups {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 14px;
 }
 
-.settings-nav nav button {
+.settings-group {
+  background: var(--bg-panel);
+  border-radius: 22px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-row {
   display: flex;
   align-items: center;
-  text-align: left;
+  gap: 16px;
+  width: 100%;
+  padding: 11px 12px;
   background: none;
   border: none;
+  border-radius: 16px;
   color: var(--text-primary);
-  padding: 11px 12px;
-  border-radius: 10px;
+  font-size: 17px;
+  text-align: left;
   cursor: pointer;
-  font-size: 14px;
 }
 
-.settings-nav nav button:hover {
+.settings-row:hover {
   background: var(--bg-elevated);
 }
 
-.settings-nav nav button.active {
-  background: var(--accent-strong);
-  color: white;
+.settings-row.active {
+  background: var(--bg-elevated);
+  box-shadow: inset 3px 0 0 var(--accent-strong);
+}
+
+.settings-row-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.settings-row-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-row-value {
+  flex-shrink: 0;
+  font-size: 16px;
+  color: var(--accent);
+}
+
+.settings-row.danger .settings-row-label {
+  color: var(--danger);
 }
 
 .settings-content {
@@ -2074,11 +2136,10 @@ textarea {
 
 /* ---------- Settings: grouped nav + collapsible history ---------- */
 .settings-nav-divider {
-  margin: 10px 12px 2px;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
+  margin: 8px 14px -6px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--accent);
 }
 
 .history-toggle {
@@ -3074,4 +3135,121 @@ textarea {
 .leave-chat-btn {
   margin-top: 8px;
   color: var(--danger);
+}
+
+/* ---------- Public / private chats, invite links ---------- */
+.visibility-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.visibility-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 12px;
+  background: var(--bg-panel);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.visibility-option.selected {
+  border-color: var(--accent-strong);
+  background: var(--bg-elevated);
+}
+
+.visibility-option:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.visibility-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.visibility-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.invite-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.invite-link-row {
+  display: flex;
+  gap: 8px;
+}
+
+.invite-link-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.join-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: max(12px, env(safe-area-inset-top)) 16px 24px;
+  background: var(--bg-app);
+}
+
+.join-back {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 8px 4px;
+}
+
+.join-card {
+  margin: auto 0;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 22px;
+  background: var(--bg-panel);
+  border-radius: 24px;
+  text-align: center;
+}
+
+.join-card h2 {
+  margin: 0;
+}
+
+.join-card .btn-primary {
+  width: 100%;
+}
+
+.join-icon {
+  font-size: 44px;
+}
+
+.join-description {
+  margin: 0;
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+
+/* On phones the settings list is a full page of its own, so no row is "active" */
+@media (max-width: 860px) {
+  .settings-row.active {
+    background: none;
+    box-shadow: none;
+  }
 }

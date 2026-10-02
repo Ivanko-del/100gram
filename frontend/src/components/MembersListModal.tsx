@@ -5,11 +5,14 @@ import {
   leaveChat,
   removeChatMember,
   renameChat,
+  resetInviteCode,
   searchUsers,
   setChatAdmin,
   setChatMute,
+  setChatPublic,
   updateChatInfo,
 } from "../data/firestore-api";
+import { buildInviteLink } from "../utils/invite";
 import { compressImageToDataUrl } from "../utils/image";
 import { useAuth } from "../context/AuthContext";
 import { ChatSummary, PublicUser } from "../types";
@@ -42,6 +45,47 @@ export default function MembersListModal({ chat, onClose, onSelectMember, onLeft
 
   const [descDraft, setDescDraft] = useState(chat.description ?? "");
   const [infoBusy, setInfoBusy] = useState(false);
+
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const inviteLink = buildInviteLink(chat, window.location.origin);
+
+  async function changeVisibility(next: boolean) {
+    if (next === !!chat.isPublic) return;
+    setError(null);
+    setLinkBusy(true);
+    try {
+      await setChatPublic(chat, next);
+    } catch {
+      setError("Не вдалося змінити видимість");
+    } finally {
+      setLinkBusy(false);
+    }
+  }
+
+  async function renewLink() {
+    if (chat.inviteCode && !window.confirm("Старе посилання перестане працювати. Створити нове?")) return;
+    setError(null);
+    setLinkBusy(true);
+    try {
+      await resetInviteCode(chat.id);
+    } catch {
+      setError("Не вдалося оновити посилання");
+    } finally {
+      setLinkBusy(false);
+    }
+  }
+
+  async function copyLink() {
+    if (!inviteLink) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt("Скопіюй посилання:", inviteLink);
+    }
+  }
 
   async function saveDescription() {
     setError(null);
@@ -242,6 +286,55 @@ export default function MembersListModal({ chat, onClose, onSelectMember, onLeft
               </button>
             )}
             {nameError && <div className="auth-error">{nameError}</div>}
+          </div>
+        )}
+
+        {(isAdmin || (canInvite && inviteLink)) && (
+          <div className="chat-settings-block invite-block">
+            {isAdmin && (
+              <div className="visibility-picker" role="radiogroup" aria-label="Видимість">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!chat.isPublic}
+                  disabled={linkBusy}
+                  className={`visibility-option ${!chat.isPublic ? "selected" : ""}`}
+                  onClick={() => changeVisibility(false)}
+                >
+                  <span className="visibility-title">🔒 Приватний</span>
+                  <span className="visibility-sub">Лише за посиланням</span>
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!!chat.isPublic}
+                  disabled={linkBusy}
+                  className={`visibility-option ${chat.isPublic ? "selected" : ""}`}
+                  onClick={() => changeVisibility(true)}
+                >
+                  <span className="visibility-title">🌐 Публічний</span>
+                  <span className="visibility-sub">У пошуку, вступ вільний</span>
+                </button>
+              </div>
+            )}
+            {inviteLink && (
+              <>
+                <span className="settings-hint">
+                  {chat.isPublic ? "Посилання на публічний чат" : "Посилання-запрошення"}
+                </span>
+                <div className="invite-link-row">
+                  <input readOnly value={inviteLink} onFocus={(e) => e.currentTarget.select()} />
+                  <button type="button" className="btn-primary" onClick={copyLink}>
+                    {copied ? "Скопійовано ✓" : "Копіювати"}
+                  </button>
+                </div>
+              </>
+            )}
+            {isAdmin && !chat.isPublic && (
+              <button type="button" className="btn-ghost chat-rename-trigger" disabled={linkBusy} onClick={renewLink}>
+                🔄 {chat.inviteCode ? "Оновити посилання" : "Створити посилання"}
+              </button>
+            )}
           </div>
         )}
 

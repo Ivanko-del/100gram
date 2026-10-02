@@ -37,6 +37,7 @@ import { ChatSummary, PublicUser } from "../types";
 import Avatar from "./Avatar";
 import UserName from "./UserName";
 import { useUnreadCounts } from "../hooks/useUnreadCounts";
+import { usePublicChatSearch } from "../hooks/usePublicChatSearch";
 import LockPrompt from "./LockPrompt";
 import LockSetupModal from "./LockSetupModal";
 import { setChatHidden, setChatLocked } from "../data/chat-lock";
@@ -97,6 +98,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PublicUser[]>([]);
   const [searching, setSearching] = useState(false);
+  const { results: publicChats, searching: searchingChats } = usePublicChatSearch(query, user?.id);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -452,6 +454,22 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                   <span className="chat-name">{u.displayName}</span>
                 </div>
                 <div className="chat-list-item-bottom">@{u.username}</div>
+              </div>
+            </button>
+          ))}
+          {(searchingChats || publicChats.length > 0) && (
+            <div className="search-results-title">{searchingChats ? "Шукаємо групи й канали…" : "Публічні групи та канали"}</div>
+          )}
+          {publicChats.map((c) => (
+            <button className="chat-list-item" key={c.id} onClick={() => navigate(`/join/${c.id}`)}>
+              <Avatar name={c.name} color={c.avatarColor} photoUrl={c.avatarUrl} />
+              <div className="chat-list-item-body">
+                <div className="chat-list-item-top">
+                  <span className="chat-name">{c.name}</span>
+                </div>
+                <div className="chat-list-item-bottom">
+                  {c.isChannel ? "Канал" : "Група"} · {c.members.length} {c.isChannel ? "підписників" : "учасників"}
+                </div>
               </div>
             </button>
           ))}

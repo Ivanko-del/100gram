@@ -4,17 +4,21 @@ import {
   ArrowLeft,
   Bell,
   Cake,
+  Camera,
   Clock,
   CornerDownLeft,
   Crown,
+  KeyRound,
   LayoutList,
   Lock,
+  LogOut,
   MessageSquare,
   Palette,
-  Shield,
+  Star,
   User as UserIcon,
   Wallet,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import {
   DataError,
   buyPremium,
@@ -109,43 +113,52 @@ export default function SettingsPage() {
   return (
     <div className={`settings-layout ${tabOpened ? "mobile-show-detail" : ""}`}>
       <aside className="settings-nav">
-        <button className="icon-btn back-btn" onClick={() => navigate("/")}>
-          <ArrowLeft size={18} className="inline-icon" /> Назад до чатів
-        </button>
-        <button type="button" className="settings-profile-preview" onClick={() => setShowOwnProfile(true)}>
-          <Avatar name={user.displayName} color={user.avatarColor} photoUrl={user.avatarUrl} size={72} isPremium={user.isPremium} />
+        <div className="settings-nav-top">
+          <button type="button" className="header-icon-btn" onClick={() => navigate("/")} aria-label="Назад до чатів">
+            <ArrowLeft size={22} />
+          </button>
+        </div>
+
+        <div className="settings-hero">
+          <div className="settings-hero-avatar">
+            <button type="button" className="settings-hero-avatar-btn" onClick={() => setShowOwnProfile(true)} aria-label="Мій профіль">
+              <Avatar name={user.displayName} color={user.avatarColor} photoUrl={user.avatarUrl} size={96} isPremium={user.isPremium} />
+            </button>
+            <button type="button" className="settings-hero-camera" onClick={() => openTab("profile")} aria-label="Змінити фото">
+              <Camera size={18} />
+            </button>
+          </div>
           <div className="settings-profile-name">{user.displayName}</div>
           <div className="settings-profile-username">@{user.username}</div>
-          {user.isPremium && <div className="premium-chip">⭐ Преміум активний</div>}
-        </button>
+        </div>
         {showOwnProfile && <UserProfileModal uid={user.id} onClose={() => setShowOwnProfile(false)} />}
-        <nav>
-          <button className={tab === "profile" ? "active" : ""} onClick={() => openTab("profile")}>
-            <UserIcon size={17} className="inline-icon" /> Профіль
-          </button>
-          <button className={tab === "appearance" ? "active" : ""} onClick={() => openTab("appearance")}>
-            <Palette size={17} className="inline-icon" /> Вигляд
-          </button>
-          <button className={tab === "chats" ? "active" : ""} onClick={() => openTab("chats")}>
-            <MessageSquare size={17} className="inline-icon" /> Чати і сповіщення
-          </button>
-          <button className={tab === "privacy" ? "active" : ""} onClick={() => openTab("privacy")}>
-            <Shield size={17} className="inline-icon" /> Конфіденційність
-          </button>
+
+        <nav className="settings-groups">
+          <div className="settings-group">
+            <NavRow icon={<UserIcon size={18} />} color="#3b9cf0" label="Профіль" active={tab === "profile"} onClick={() => openTab("profile")} />
+            <NavRow icon={<Palette size={18} />} color="#8e6cf0" label="Вигляд" active={tab === "appearance"} onClick={() => openTab("appearance")} />
+            <NavRow icon={<MessageSquare size={18} />} color="#f0a03b" label="Чати і сповіщення" active={tab === "chats"} onClick={() => openTab("chats")} />
+            <NavRow icon={<Lock size={18} />} color="#4cb05a" label="Конфіденційність" active={tab === "privacy"} onClick={() => openTab("privacy")} />
+            <NavRow icon={<KeyRound size={18} />} color="#e5546a" label="Акаунт" active={tab === "account"} onClick={() => openTab("account")} />
+          </div>
+
           <div className="settings-nav-divider">Гаманець і підписка</div>
-          <button className={tab === "wallet" ? "active" : ""} onClick={() => openTab("wallet")}>
-            <Wallet size={17} className="inline-icon" /> Гаманець · {user.grams} ГРАМ
-          </button>
-          <button className={tab === "premium" ? "active" : ""} onClick={() => openTab("premium")}>
-            <Crown size={17} className="inline-icon" /> Преміум
-          </button>
-          <button className={tab === "account" ? "active" : ""} onClick={() => openTab("account")}>
-            <Lock size={17} className="inline-icon" /> Акаунт
-          </button>
+          <div className="settings-group">
+            <NavRow icon={<Wallet size={18} />} color="#29a9c4" label="Гаманець" value={`${user.grams} ГРАМ`} active={tab === "wallet"} onClick={() => openTab("wallet")} />
+            <NavRow
+              icon={<Star size={18} />}
+              color="linear-gradient(135deg, #8e6cf0, #5b8def)"
+              label="Преміум"
+              value={user.isPremium ? "Активний" : undefined}
+              active={tab === "premium"}
+              onClick={() => openTab("premium")}
+            />
+          </div>
+
+          <div className="settings-group">
+            <NavRow icon={<LogOut size={18} />} color="#e5546a" label="Вийти" danger onClick={() => logout()} />
+          </div>
         </nav>
-        <button className="logout-btn" onClick={() => logout()}>
-          Вийти
-        </button>
       </aside>
 
       <main className="settings-content">
@@ -161,6 +174,36 @@ export default function SettingsPage() {
         {tab === "account" && <AccountTab user={user} />}
       </main>
     </div>
+  );
+}
+
+/** One row of the settings list: a coloured icon square, a label and an
+ * optional value on the right, like the Telegram settings screen. */
+function NavRow({
+  icon,
+  color,
+  label,
+  value,
+  active,
+  danger,
+  onClick,
+}: {
+  icon: ReactNode;
+  color: string;
+  label: string;
+  value?: string;
+  active?: boolean;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={`settings-row ${active ? "active" : ""} ${danger ? "danger" : ""}`} onClick={onClick}>
+      <span className="settings-row-icon" style={{ background: color }}>
+        {icon}
+      </span>
+      <span className="settings-row-label">{label}</span>
+      {value && <span className="settings-row-value">{value}</span>}
+    </button>
   );
 }
 

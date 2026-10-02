@@ -82,6 +82,10 @@ export interface ChatSummary {
   updatedAt: string;
   /** id of the message shown in the pinned banner at the top of the chat */
   pinnedMessageId?: string | null;
+  /** Groups/channels: findable in search and joinable by anyone. Missing = private. */
+  isPublic?: boolean;
+  /** Private groups/channels: secret part of the invite link (members only can read it) */
+  inviteCode?: string | null;
 }
 
 export interface PollData {
