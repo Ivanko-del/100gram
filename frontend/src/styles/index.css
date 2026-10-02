@@ -3253,3 +3253,89 @@ textarea {
     box-shadow: none;
   }
 }
+
+/* ---------- Settings: FAQ, folders, info lists, power saving ---------- */
+.faq-item {
+  background: var(--bg-panel);
+  border-radius: 16px;
+  padding: 0 16px;
+}
+
+.faq-item summary {
+  padding: 14px 0;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq-item summary::after {
+  content: "▾";
+  float: right;
+  color: var(--text-secondary);
+}
+
+.faq-item[open] summary::after {
+  content: "▴";
+}
+
+.faq-answer {
+  padding: 0 0 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.info-group {
+  padding: 4px 16px 12px;
+}
+
+.info-group h3 {
+  margin-top: 12px;
+}
+
+.info-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.folder-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.folder-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.folder-chat-list {
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 4px;
+}
+
+/* Power saving: no animations, transitions or blur anywhere */
+:root[data-powersave="1"] *,
+:root[data-powersave="1"] *::before,
+:root[data-powersave="1"] *::after {
+  animation: none !important;
+  transition: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  scroll-behavior: auto !important;
+}

@@ -3,6 +3,13 @@ export interface UserBadge {
   color: string;
 }
 
+/** A user-made tab in the chat list ("Telegram folders"): a named set of chats. */
+export interface ChatFolder {
+  id: string;
+  name: string;
+  chatIds: string[];
+}
+
 export interface User {
   id: string;
   username: string;
@@ -37,6 +44,7 @@ export interface User {
   archivedChats?: string[];
   /** chatId -> ISO time the user removed it; it comes back on a newer message */
   hiddenChats?: Record<string, string>;
+  chatFolders?: ChatFolder[];
   badge?: UserBadge | null;
   showAdminBadge?: boolean;
 }

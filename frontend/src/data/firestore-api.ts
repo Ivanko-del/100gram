@@ -39,7 +39,7 @@ import {
 import { auth, db } from "../firebase";
 import { AVATAR_COLORS, WELCOME_BONUS } from "../constants";
 import { clearChatLock } from "./chat-lock";
-import { ChatMessage, ChatSummary, PremiumPlan, PublicUser, User, UserBadge, WalletTransaction } from "../types";
+import { ChatFolder, ChatMessage, ChatSummary, PremiumPlan, PublicUser, User, UserBadge, WalletTransaction } from "../types";
 
 export class DataError extends Error {}
 
@@ -272,6 +272,7 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     pinnedChats: (d.pinnedChats as string[]) ?? [],
     archivedChats: (d.archivedChats as string[]) ?? [],
     hiddenChats: (d.hiddenChats as Record<string, string>) ?? {},
+    chatFolders: (d.chatFolders as ChatFolder[]) ?? [],
     badge: (d.badge as UserBadge) ?? null,
     showAdminBadge: !!d.showAdminBadge,
   };
@@ -459,6 +460,11 @@ export async function setChatMutedForMe(uid: string, chatId: string, muted: bool
  * sounds. (Rules can't stop them from writing - it only mutes them for you.) */
 export async function setUserBlocked(uid: string, otherUid: string, blocked: boolean): Promise<void> {
   await updateDoc(doc(db, "users", uid), { blockedUids: blocked ? arrayUnion(otherUid) : arrayRemove(otherUid) });
+}
+
+/** Saves the user's chat-list folders (the whole list at once, it is small). */
+export async function setChatFolders(uid: string, folders: ChatFolder[]): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { chatFolders: folders });
 }
 
 /** Presence heartbeat - the timestamp other people's "last seen" is built from. */
