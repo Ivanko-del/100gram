@@ -12,6 +12,7 @@ import {
   Pin,
   PinOff,
   Reply,
+  Flag,
   Forward as ForwardIcon,
   SmilePlus,
   Trash2,
@@ -48,6 +49,8 @@ interface Props {
   isPinned?: boolean;
   onPin?: (message: ChatMessage) => void;
   onUnpin?: () => void;
+  /** report this (someone else's) message */
+  onReport?: (message: ChatMessage) => void;
 }
 
 function formatTime(iso: string) {
@@ -75,6 +78,7 @@ export default function MessageBubble({
   isPinned,
   onPin,
   onUnpin,
+  onReport,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -202,7 +206,7 @@ export default function MessageBubble({
             <SmilePlus size={14} />
           </button>
         )}
-        {(onReply || onForward || onEdit || canPin) && (
+        {(onReply || onForward || onEdit || canPin || (onReport && !isOwn)) && (
           <button type="button" className="message-react-btn message-more-btn" onClick={() => { setMenuOpen((v) => !v); setPicking(false); }} title="Дії">
             <MoreHorizontal size={14} />
           </button>
@@ -232,6 +236,11 @@ export default function MessageBubble({
             {canPin && isPinned && onUnpin && (
               <button type="button" onClick={() => { setMenuOpen(false); onUnpin(); }}>
                 <PinOff size={15} /> Відкріпити
+              </button>
+            )}
+            {onReport && !isOwn && (
+              <button type="button" onClick={() => { setMenuOpen(false); onReport(message); }}>
+                <Flag size={15} /> Поскаржитись
               </button>
             )}
             {message.type === "text" && (

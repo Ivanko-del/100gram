@@ -26,6 +26,7 @@ import MessageBubble from "./MessageBubble";
 import MessageInput from "./MessageInput";
 import MembersListModal from "./MembersListModal";
 import UserProfileModal from "./UserProfileModal";
+import ReportModal from "./ReportModal";
 
 interface Props {
   chat: ChatSummary;
@@ -50,6 +51,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [forwardMsg, setForwardMsg] = useState<ChatMessage | null>(null);
+  const [reportMsg, setReportMsg] = useState<ChatMessage | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const loadingOlder = useRef(false);
   const sentAt = useRef<number[]>([]);
@@ -422,6 +424,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
               isPinned={chat.pinnedMessageId === m.id}
               onPin={handlePin}
               onUnpin={handleUnpin}
+              onReport={setReportMsg}
             />
           );
         })}
@@ -429,6 +432,19 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
       </div>
 
       {sendError && <div className="auth-error chat-send-error">{sendError}</div>}
+
+      {reportMsg && (
+        <ReportModal
+          targetUid={reportMsg.sender.id}
+          targetName={reportMsg.sender.displayName}
+          message={{
+            chatId: chat.id,
+            messageId: reportMsg.id,
+            text: reportMsg.type === "poll" ? reportMsg.poll?.question ?? "" : reportMsg.type === "image" ? "" : reportMsg.content,
+          }}
+          onClose={() => setReportMsg(null)}
+        />
+      )}
 
       {forwardMsg && <ForwardModal chats={targets} onPick={forwardTo} onClose={() => setForwardMsg(null)} />}
 

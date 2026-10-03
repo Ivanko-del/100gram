@@ -3093,3 +3093,37 @@ textarea {
   background: #b45309;
   color: #fff;
 }
+
+/* ---------- Reports ---------- */
+.report-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.report-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.report-snapshot {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  color: var(--text-secondary);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.report-item {
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.3));
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.report-item-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

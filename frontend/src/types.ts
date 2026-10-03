@@ -138,3 +138,16 @@ export interface WalletTransaction {
   direction: "in" | "out";
   counterparty: { username: string; displayName: string };
 }
+
+export interface Report {
+  id: string;
+  reporterUid: string;
+  targetUid: string;
+  chatId?: string | null;
+  messageId?: string | null;
+  messageText?: string | null;
+  reason: "spam" | "abuse" | "scam" | "illegal" | "other";
+  comment?: string | null;
+  createdAt: string;
+  status: "open" | "closed";
+}

@@ -7,6 +7,7 @@ import {
   Clock,
   CornerDownLeft,
   Crown,
+  Flag,
   LayoutList,
   Lock,
   MessageSquare,
@@ -20,10 +21,13 @@ import {
   assertOnline,
   buyPremium,
   changePassword,
+  closeReport,
   deleteAccount,
   getCurrentEmail,
   getUserProfile,
   grantPremiumFromAxioma,
+  listOpenReports,
+  setGlobalMute,
   setUserBlocked,
   resetChatLockWithAccountPassword,
   setMyPhone,
@@ -53,7 +57,8 @@ import {
   PREMIUM_REACTIONS_PER_MESSAGE,
   FREE_REACTIONS_PER_MESSAGE,
   PREMIUM_PLANS, SITE_ADMIN_USERNAME, isSiteAdmin } from "../constants";
-import { PremiumPlan, PublicUser, User, WalletTransaction } from "../types";
+import { PremiumPlan, PublicUser, Report, User, WalletTransaction } from "../types";
+import { REPORT_REASON_LABELS } from "../utils/reports";
 import Avatar from "../components/Avatar";
 import AxiomaCard from "../components/AxiomaCard";
 import UserProfileModal from "../components/UserProfileModal";
@@ -84,7 +89,7 @@ import {
   setFontSize,
 } from "../utils/prefs";
 
-type Tab = "profile" | "appearance" | "chats" | "privacy" | "wallet" | "premium" | "account";
+type Tab = "profile" | "appearance" | "chats" | "privacy" | "wallet" | "premium" | "account" | "reports";
 
 interface TabProps {
   user: User;
@@ -143,6 +148,11 @@ export default function SettingsPage() {
           <button className={tab === "account" ? "active" : ""} onClick={() => openTab("account")}>
             <Lock size={17} className="inline-icon" /> Акаунт
           </button>
+          {isSiteAdmin(user.username) && (
+            <button className={tab === "reports" ? "active" : ""} onClick={() => openTab("reports")}>
+              <Flag size={17} className="inline-icon" /> 🚩 Скарги
+            </button>
+          )}
         </nav>
         <button className="logout-btn" onClick={() => logout()}>
           Вийти
@@ -160,6 +170,7 @@ export default function SettingsPage() {
         {tab === "wallet" && <WalletTab user={user} />}
         {tab === "premium" && <PremiumTab user={user} />}
         {tab === "account" && <AccountTab user={user} />}
+        {tab === "reports" && isSiteAdmin(user.username) && <ReportsTab />}
       </main>
     </div>
   );
@@ -1220,6 +1231,79 @@ function PhoneSection({ user }: TabProps) {
         </>
       )}
       <div ref={recaptchaRef} />
+    </div>
+  );
+}
+
+function ReportsTab() {
+  const [reports, setReports] = useState<Report[] | null>(null);
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [muted, setMuted] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    listOpenReports()
+      .then(async (list) => {
+        const uids = [...new Set(list.flatMap((r) => [r.reporterUid, r.targetUid]))];
+        const profiles = await Promise.all(uids.map((u) => getUserProfile(u).catch(() => null)));
+        if (cancelled) return;
+        setNames(Object.fromEntries(uids.map((u, i) => [u, profiles[i] ? `${profiles[i]!.displayName} (@${profiles[i]!.username})` : u])));
+        setMuted(Object.fromEntries(uids.map((u, i) => [u, !!profiles[i]?.mutedGlobally])));
+        setReports(list);
+      })
+      .catch(() => !cancelled && setError("Не вдалося завантажити скарги"));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function close(id: string) {
+    setError(null);
+    try {
+      await closeReport(id);
+      setReports((prev) => prev?.filter((r) => r.id !== id) ?? prev);
+    } catch {
+      setError("Не вдалося закрити скаргу");
+    }
+  }
+
+  async function mute(uid: string) {
+    setError(null);
+    try {
+      await setGlobalMute(uid, true);
+      setMuted((prev) => ({ ...prev, [uid]: true }));
+    } catch {
+      setError("Не вдалося замутити");
+    }
+  }
+
+  return (
+    <div className="settings-panel">
+      <h2>🚩 Скарги</h2>
+      {error && <div className="auth-error">{error}</div>}
+      {!reports && !error && <p className="settings-hint">Завантаження…</p>}
+      {reports && reports.length === 0 && <p className="settings-hint">Відкритих скарг немає 🎉</p>}
+      {reports?.map((r) => (
+        <div className="report-item" key={r.id}>
+          <div>
+            <b>{REPORT_REASON_LABELS[r.reason]}</b> · на {names[r.targetUid] ?? r.targetUid}
+          </div>
+          <div className="settings-hint">
+            від {names[r.reporterUid] ?? r.reporterUid} · {new Date(r.createdAt).toLocaleString("uk-UA")}
+          </div>
+          {r.messageText && <blockquote className="report-snapshot">{r.messageText}</blockquote>}
+          {r.comment && <div>💬 {r.comment}</div>}
+          <div className="report-item-actions">
+            <button type="button" className="btn-ghost" onClick={() => close(r.id)}>
+              Закрити
+            </button>
+            <button type="button" className="btn-ghost" disabled={muted[r.targetUid]} onClick={() => mute(r.targetUid)}>
+              {muted[r.targetUid] ? "🔇 Замучено" : "🔇 Замутити глобально"}
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

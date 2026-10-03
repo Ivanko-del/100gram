@@ -40,7 +40,8 @@ import { auth, db } from "../firebase";
 import { AVATAR_COLORS, WELCOME_BONUS } from "../constants";
 import { clearChatLock } from "./chat-lock";
 import { OFFLINE_MESSAGE, isOfflineError, isOnline } from "../utils/offline";
-import { ChatMessage, ChatSummary, PremiumPlan, PublicUser, User, UserBadge, WalletTransaction } from "../types";
+import { ChatMessage, ChatSummary, PremiumPlan, PublicUser, Report, User, UserBadge, WalletTransaction } from "../types";
+import { ReportReason, clipReportText, getReportedIds, isReportReason, reportDocId, rememberReported } from "../utils/reports";
 
 export class DataError extends Error {}
 
@@ -1006,4 +1007,90 @@ export async function grantPremiumFromAxioma(uid: string, plan: PremiumPlan): Pr
       });
     });
   });
+}
+
+/* ---------------- reports ---------------- */
+
+/** `already`: this exact report exists. `unavailable`: rules denied it and we
+ * can't tell why (reports are unreadable for users) - most likely the
+ * updated firestore.rules are not published yet. */
+export class ReportError extends DataError {
+  constructor(public kind: "already" | "unavailable", message: string) {
+    super(message);
+  }
+}
+
+export function hasReported(reporterUid: string, targetUid: string, messageId?: string | null): boolean {
+  return getReportedIds(reporterUid).includes(reportDocId(reporterUid, targetUid, messageId));
+}
+
+export interface ReportInput {
+  reporterUid: string;
+  targetUid: string;
+  reason: ReportReason;
+  comment?: string;
+  chatId?: string;
+  messageId?: string;
+  /** snapshot of the reported message text at the moment of the report */
+  messageText?: string;
+}
+
+export async function submitReport(input: ReportInput): Promise<void> {
+  if (!isReportReason(input.reason)) throw new DataError("Обери причину скарги");
+  const id = reportDocId(input.reporterUid, input.targetUid, input.messageId);
+  if (hasReported(input.reporterUid, input.targetUid, input.messageId)) {
+    throw new ReportError("already", "Ви вже скаржились");
+  }
+  const comment = input.comment?.trim();
+  const messageText = input.messageText?.trim();
+  try {
+    await onlineOnly(() =>
+      setDoc(doc(db, "reports", id), {
+        reporterUid: input.reporterUid,
+        targetUid: input.targetUid,
+        ...(input.chatId ? { chatId: input.chatId } : {}),
+        ...(input.messageId ? { messageId: input.messageId } : {}),
+        ...(messageText ? { messageText: clipReportText(messageText) } : {}),
+        reason: input.reason,
+        ...(comment ? { comment: clipReportText(comment) } : {}),
+        createdAt: serverTimestamp(),
+        status: "open",
+      })
+    );
+  } catch (err) {
+    if ((err as { code?: string })?.code === "permission-denied") {
+      throw new ReportError(
+        "unavailable",
+        "Функція скарг ще вмикається (або ви вже скаржились на це). Спробуйте пізніше."
+      );
+    }
+    throw err;
+  }
+  rememberReported(input.reporterUid, id);
+}
+
+function mapReport(snap: { id: string; data: () => Record<string, unknown> }): Report {
+  const d = snap.data();
+  return {
+    id: snap.id,
+    reporterUid: d.reporterUid as string,
+    targetUid: d.targetUid as string,
+    chatId: (d.chatId as string) ?? null,
+    messageId: (d.messageId as string) ?? null,
+    messageText: (d.messageText as string) ?? null,
+    reason: isReportReason(d.reason) ? d.reason : "other",
+    comment: (d.comment as string) ?? null,
+    createdAt: tsToIso(d.createdAt),
+    status: d.status === "closed" ? "closed" : "open",
+  };
+}
+
+/** Site admin only: open reports, newest first (sorted here, so no composite index is needed). */
+export async function listOpenReports(): Promise<Report[]> {
+  const snap = await getDocs(query(collection(db, "reports"), where("status", "==", "open")));
+  return snap.docs.map(mapReport).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function closeReport(reportId: string): Promise<void> {
+  await updateDoc(doc(db, "reports", reportId), { status: "closed" });
 }

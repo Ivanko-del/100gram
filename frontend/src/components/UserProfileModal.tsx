@@ -6,6 +6,7 @@ import { BADGE_COLORS, PROFILE_BANNERS, isSiteAdmin } from "../constants";
 import { User } from "../types";
 import Avatar from "./Avatar";
 import UserName from "./UserName";
+import ReportModal from "./ReportModal";
 
 interface Props {
   uid: string;
@@ -18,6 +19,7 @@ export default function UserProfileModal({ uid, onClose }: Props) {
   const [profile, setProfile] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [reporting, setReporting] = useState(false);
 
   const [badgeText, setBadgeText] = useState("");
   const [badgeColor, setBadgeColor] = useState(BADGE_COLORS[0]);
@@ -148,6 +150,13 @@ export default function UserProfileModal({ uid, onClose }: Props) {
                 {(me.blockedUids ?? []).includes(profile.id) ? "✅ Розблокувати" : "🚫 Заблокувати"}
               </button>
             )}
+
+            {!isSelf && me && (
+              <button className="btn-ghost" onClick={() => setReporting(true)}>
+                🚩 Поскаржитись
+              </button>
+            )}
+            {reporting && <ReportModal targetUid={profile.id} targetName={profile.displayName} onClose={() => setReporting(false)} />}
 
             {viewerIsSiteAdmin && (
               <div className="admin-controls">
