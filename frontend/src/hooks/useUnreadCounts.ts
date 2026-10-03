@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { countMessagesSince } from "../data/firestore-api";
 import { ChatSummary } from "../types";
 import { isUnread } from "../utils/unread";
+import { useOnlineStatus } from "./useOnlineStatus";
 
 /** chatId -> number of unread messages. Counted server-side, and only for
  * chats that actually have news; results are cached per last-message time so
@@ -9,6 +10,9 @@ import { isUnread } from "../utils/unread";
 export function useUnreadCounts(chats: ChatSummary[], myUid: string | undefined): Record<string, number> {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const cache = useRef<Map<string, number>>(new Map());
+  // getCountFromServer needs the network: offline we keep the "at least 1"
+  // placeholder (nothing is cached) and count properly once back online.
+  const online = useOnlineStatus();
 
   const unread = myUid ? chats.filter((c) => isUnread(c, myUid)) : [];
   const key = unread.map((c) => `${c.id}:${c.lastMessage?.createdAt}:${c.readBy[myUid!]}`).join("|");
@@ -26,6 +30,7 @@ export function useUnreadCounts(chats: ChatSummary[], myUid: string | undefined)
         continue;
       }
       next[c.id] = 1; // show at least one until the exact count arrives
+      if (!online) continue;
       pending.push(
         countMessagesSince(c.id, c.readBy[myUid])
           .then((n) => {
@@ -41,7 +46,7 @@ export function useUnreadCounts(chats: ChatSummary[], myUid: string | undefined)
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, myUid]);
+  }, [key, myUid, online]);
 
   return counts;
 }

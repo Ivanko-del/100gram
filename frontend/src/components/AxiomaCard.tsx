@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { AxiomaError, AXIOMA_EXCHANGE_RATE, AXIOMA_SITE_URL, withdrawFromAxioma } from "../axioma";
-import { topUpGramsFromAxioma } from "../data/firestore-api";
+import { DataError, assertOnline, topUpGramsFromAxioma } from "../data/firestore-api";
 import { useAxioma } from "../hooks/useAxioma";
 import { User } from "../types";
 
@@ -60,13 +60,14 @@ export default function AxiomaCard({ user }: Props) {
     }
     setToppingUp(true);
     try {
+      assertOnline(); // before the card is charged, not after
       await withdrawFromAxioma(topupAmount, "Поповнення ГРАМ у 100 ГРАМ");
       const grams = Math.round(topupAmount * AXIOMA_EXCHANGE_RATE);
       await topUpGramsFromAxioma(user.id, grams, topupAmount);
       setTopupSuccess(`+${grams} ГРАМ зараховано ✓`);
       setTimeout(() => setTopupSuccess(null), 3000);
     } catch (err) {
-      setTopupError(err instanceof AxiomaError ? err.message : "Не вдалося поповнити");
+      setTopupError(err instanceof AxiomaError || err instanceof DataError ? err.message : "Не вдалося поповнити");
     } finally {
       setToppingUp(false);
     }

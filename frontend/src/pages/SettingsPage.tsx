@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import {
   DataError,
+  assertOnline,
   buyPremium,
   changePassword,
   deleteAccount,
@@ -1021,6 +1022,7 @@ function PremiumTab({ user }: TabProps) {
     setError(null);
     setSuccess(null);
     try {
+      assertOnline(); // before the card is charged, not after
       await withdrawFromAxioma(plan.price / AXIOMA_EXCHANGE_RATE, `Преміум 100 ГРАМ: ${plan.label}`);
       await grantPremiumFromAxioma(user.id, plan);
       setSuccess(`Преміум активовано карткою Аксіоми: ${plan.label} ✓`);

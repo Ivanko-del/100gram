@@ -39,9 +39,26 @@ import {
 import { auth, db } from "../firebase";
 import { AVATAR_COLORS, WELCOME_BONUS } from "../constants";
 import { clearChatLock } from "./chat-lock";
+import { OFFLINE_MESSAGE, isOfflineError, isOnline } from "../utils/offline";
 import { ChatMessage, ChatSummary, PremiumPlan, PublicUser, User, UserBadge, WalletTransaction } from "../types";
 
 export class DataError extends Error {}
+
+/** Throws a readable "Потрібен інтернет" up front when offline - and also
+ * when the browser claims to be online but the server is unreachable. Use
+ * around transactions and payments, which cannot be queued offline. */
+export function assertOnline(): void {
+  if (!isOnline()) throw new DataError(OFFLINE_MESSAGE);
+}
+async function onlineOnly<T>(fn: () => Promise<T>): Promise<T> {
+  assertOnline();
+  try {
+    return await fn();
+  } catch (err) {
+    if (!(err instanceof DataError) && isOfflineError(err)) throw new DataError(OFFLINE_MESSAGE);
+    throw err;
+  }
+}
 
 /** Accepts "@olha" or "olha" alike - usernames are stored without the "@". */
 export function normalizeUsername(raw: string): string {
@@ -141,7 +158,13 @@ export async function finishRegistration(
 }
 
 export async function loginUser(email: string, password: string): Promise<void> {
-  await signInWithEmailAndPassword(auth, email.trim(), password);
+  assertOnline();
+  try {
+    await signInWithEmailAndPassword(auth, email.trim(), password);
+  } catch (err) {
+    if (isOfflineError(err)) throw new DataError(OFFLINE_MESSAGE);
+    throw err;
+  }
 }
 
 /** After a phone sign-in: a number that was never registered makes Firebase
@@ -178,18 +201,20 @@ export async function searchUserByPhone(phone: string, excludeUid: string): Prom
 /** Sets, changes or clears the phone on the signed-in account, keeping the
  * unique `phones/{digits}` reservation in step with it. */
 export async function setMyPhone(uid: string, oldPhone: string | null, newPhone: string | null): Promise<void> {
-  if (oldPhone === newPhone) return;
-  await runTransaction(db, async (tx) => {
-    if (newPhone) {
-      const ref = doc(db, "phones", newPhone);
-      const snap = await tx.get(ref);
-      if (snap.exists() && (snap.data() as { uid: string }).uid !== uid) {
-        throw new DataError("Цей номер телефону вже використовується");
+  return onlineOnly(async () => {
+    if (oldPhone === newPhone) return;
+    await runTransaction(db, async (tx) => {
+      if (newPhone) {
+        const ref = doc(db, "phones", newPhone);
+        const snap = await tx.get(ref);
+        if (snap.exists() && (snap.data() as { uid: string }).uid !== uid) {
+          throw new DataError("Цей номер телефону вже використовується");
+        }
+        tx.set(ref, { uid });
       }
-      tx.set(ref, { uid });
-    }
-    if (oldPhone) tx.delete(doc(db, "phones", oldPhone));
-    tx.update(doc(db, "users", uid), { phone: newPhone });
+      if (oldPhone) tx.delete(doc(db, "phones", oldPhone));
+      tx.update(doc(db, "users", uid), { phone: newPhone });
+    });
   });
 }
 
@@ -862,47 +887,51 @@ export function subscribeTransactions(uid: string, cb: (txs: WalletTransaction[]
 }
 
 export async function transferGrams(fromUid: string, fromUsername: string, toUsername: string, amount: number, note: string | null) {
-  const toUsernameLower = normalizeUsername(toUsername);
-  const unameSnap = await getDoc(doc(db, "usernames", toUsernameLower));
-  if (!unameSnap.exists()) throw new DataError("Отримувача не знайдено");
-  const toUid = (unameSnap.data() as { uid: string }).uid;
-  if (toUid === fromUid) throw new DataError("Не можна переказати собі");
+  return onlineOnly(async () => {
+    const toUsernameLower = normalizeUsername(toUsername);
+    const unameSnap = await getDoc(doc(db, "usernames", toUsernameLower));
+    if (!unameSnap.exists()) throw new DataError("Отримувача не знайдено");
+    const toUid = (unameSnap.data() as { uid: string }).uid;
+    if (toUid === fromUid) throw new DataError("Не можна переказати собі");
 
-  await runTransaction(db, async (tx) => {
-    const fromRef = doc(db, "users", fromUid);
-    const toRef = doc(db, "users", toUid);
-    const fromSnap = await tx.get(fromRef);
-    const toSnap = await tx.get(toRef);
-    if (!fromSnap.exists() || !toSnap.exists()) throw new DataError("Помилка гаманця");
-    const fromData = fromSnap.data() as { grams: number };
-    const toData = toSnap.data() as { grams: number; username: string };
-    if (fromData.grams < amount) throw new DataError("Недостатньо ГРАМів");
+    await runTransaction(db, async (tx) => {
+      const fromRef = doc(db, "users", fromUid);
+      const toRef = doc(db, "users", toUid);
+      const fromSnap = await tx.get(fromRef);
+      const toSnap = await tx.get(toRef);
+      if (!fromSnap.exists() || !toSnap.exists()) throw new DataError("Помилка гаманця");
+      const fromData = fromSnap.data() as { grams: number };
+      const toData = toSnap.data() as { grams: number; username: string };
+      if (fromData.grams < amount) throw new DataError("Недостатньо ГРАМів");
 
-    tx.update(fromRef, { grams: fromData.grams - amount });
-    tx.update(toRef, { grams: toData.grams + amount });
+      tx.update(fromRef, { grams: fromData.grams - amount });
+      tx.update(toRef, { grams: toData.grams + amount });
 
-    const fromTxRef = doc(collection(fromRef, "transactions"));
-    const toTxRef = doc(collection(toRef, "transactions"));
-    tx.set(fromTxRef, { amount: -amount, type: "transfer", note, counterpart: toUid, counterpartUsername: toData.username, createdAt: serverTimestamp() });
-    tx.set(toTxRef, { amount, type: "transfer", note, counterpart: fromUid, counterpartUsername: fromUsername, createdAt: serverTimestamp() });
+      const fromTxRef = doc(collection(fromRef, "transactions"));
+      const toTxRef = doc(collection(toRef, "transactions"));
+      tx.set(fromTxRef, { amount: -amount, type: "transfer", note, counterpart: toUid, counterpartUsername: toData.username, createdAt: serverTimestamp() });
+      tx.set(toTxRef, { amount, type: "transfer", note, counterpart: fromUid, counterpartUsername: fromUsername, createdAt: serverTimestamp() });
+    });
   });
 }
 
 export async function buyPremium(uid: string, plan: PremiumPlan) {
-  await runTransaction(db, async (tx) => {
-    const ref = doc(db, "users", uid);
-    const snap = await tx.get(ref);
-    if (!snap.exists()) throw new DataError("Помилка гаманця");
-    const data = snap.data() as { grams: number; premiumUntil: Timestamp | null };
-    if (data.grams < plan.price) throw new DataError("Недостатньо ГРАМів");
+  return onlineOnly(async () => {
+    await runTransaction(db, async (tx) => {
+      const ref = doc(db, "users", uid);
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new DataError("Помилка гаманця");
+      const data = snap.data() as { grams: number; premiumUntil: Timestamp | null };
+      if (data.grams < plan.price) throw new DataError("Недостатньо ГРАМів");
 
-    const now = new Date();
-    const base = data.premiumUntil && data.premiumUntil.toDate() > now ? data.premiumUntil.toDate() : now;
-    const premiumUntil = new Date(base.getTime() + plan.days * 24 * 60 * 60 * 1000);
+      const now = new Date();
+      const base = data.premiumUntil && data.premiumUntil.toDate() > now ? data.premiumUntil.toDate() : now;
+      const premiumUntil = new Date(base.getTime() + plan.days * 24 * 60 * 60 * 1000);
 
-    tx.update(ref, { grams: data.grams - plan.price, isPremium: true, premiumUntil: Timestamp.fromDate(premiumUntil) });
-    const txRef = doc(collection(ref, "transactions"));
-    tx.set(txRef, { amount: -plan.price, type: "premium_purchase", note: `Преміум: ${plan.label}`, counterpart: null, counterpartUsername: null, createdAt: serverTimestamp() });
+      tx.update(ref, { grams: data.grams - plan.price, isPremium: true, premiumUntil: Timestamp.fromDate(premiumUntil) });
+      const txRef = doc(collection(ref, "transactions"));
+      tx.set(txRef, { amount: -plan.price, type: "premium_purchase", note: `Преміум: ${plan.label}`, counterpart: null, counterpartUsername: null, createdAt: serverTimestamp() });
+    });
   });
 }
 
@@ -911,43 +940,47 @@ export async function buyPremium(uid: string, plan: PremiumPlan) {
 /** Credits ГРАМ after a successful `withdrawFromAxioma` - call this only
  * once the Аксіома card debit has actually gone through. */
 export async function topUpGramsFromAxioma(uid: string, grams: number, axiomaAmount: number): Promise<void> {
-  const ref = doc(db, "users", uid);
-  const txRef = doc(collection(ref, "transactions"));
-  const batch = writeBatch(db);
-  batch.update(ref, { grams: increment(grams) });
-  batch.set(txRef, {
-    amount: grams,
-    type: "axioma_topup",
-    note: `Поповнення з картки Аксіоми (${axiomaAmount} ₴)`,
-    counterpart: null,
-    counterpartUsername: null,
-    createdAt: serverTimestamp(),
+  return onlineOnly(async () => {
+    const ref = doc(db, "users", uid);
+    const txRef = doc(collection(ref, "transactions"));
+    const batch = writeBatch(db);
+    batch.update(ref, { grams: increment(grams) });
+    batch.set(txRef, {
+      amount: grams,
+      type: "axioma_topup",
+      note: `Поповнення з картки Аксіоми (${axiomaAmount} ₴)`,
+      counterpart: null,
+      counterpartUsername: null,
+      createdAt: serverTimestamp(),
+    });
+    await batch.commit();
   });
-  await batch.commit();
 }
 
 /** Grants premium paid for directly with the Аксіома card - no ГРАМ change,
  * call only once the Аксіома card debit has actually gone through. */
 export async function grantPremiumFromAxioma(uid: string, plan: PremiumPlan): Promise<void> {
-  await runTransaction(db, async (tx) => {
-    const ref = doc(db, "users", uid);
-    const snap = await tx.get(ref);
-    if (!snap.exists()) throw new DataError("Помилка гаманця");
-    const data = snap.data() as { premiumUntil: Timestamp | null };
+  return onlineOnly(async () => {
+    await runTransaction(db, async (tx) => {
+      const ref = doc(db, "users", uid);
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new DataError("Помилка гаманця");
+      const data = snap.data() as { premiumUntil: Timestamp | null };
 
-    const now = new Date();
-    const base = data.premiumUntil && data.premiumUntil.toDate() > now ? data.premiumUntil.toDate() : now;
-    const premiumUntil = new Date(base.getTime() + plan.days * 24 * 60 * 60 * 1000);
+      const now = new Date();
+      const base = data.premiumUntil && data.premiumUntil.toDate() > now ? data.premiumUntil.toDate() : now;
+      const premiumUntil = new Date(base.getTime() + plan.days * 24 * 60 * 60 * 1000);
 
-    tx.update(ref, { isPremium: true, premiumUntil: Timestamp.fromDate(premiumUntil) });
-    const txRef = doc(collection(ref, "transactions"));
-    tx.set(txRef, {
-      amount: 0,
-      type: "premium_purchase_axioma",
-      note: `Преміум карткою Аксіоми: ${plan.label}`,
-      counterpart: null,
-      counterpartUsername: null,
-      createdAt: serverTimestamp(),
+      tx.update(ref, { isPremium: true, premiumUntil: Timestamp.fromDate(premiumUntil) });
+      const txRef = doc(collection(ref, "transactions"));
+      tx.set(txRef, {
+        amount: 0,
+        type: "premium_purchase_axioma",
+        note: `Преміум карткою Аксіоми: ${plan.label}`,
+        counterpart: null,
+        counterpartUsername: null,
+        createdAt: serverTimestamp(),
+      });
     });
   });
 }

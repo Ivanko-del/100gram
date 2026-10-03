@@ -3075,3 +3075,16 @@ textarea {
   margin-top: 8px;
   color: var(--danger);
 }
+
+.offline-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  padding: 4px 12px;
+  text-align: center;
+  font-size: 13px;
+  background: #b45309;
+  color: #fff;
+}
