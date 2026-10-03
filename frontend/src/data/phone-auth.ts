@@ -48,8 +48,6 @@ export function isPhoneVerified(phoneDigits: string | null | undefined): boolean
 export function phoneAuthError(e: unknown, fallback = "Не вдалося виконати дію з номером"): string {
   if (e instanceof DataError) return e.message;
   switch ((e as { code?: string })?.code) {
-    case "auth/network-request-failed":
-      return "Потрібен інтернет";
     case "auth/invalid-phone-number":
       return "Некоректний номер телефону";
     case "auth/missing-phone-number":
