@@ -4,6 +4,7 @@ import {
   BarChart3,
   Check,
   CheckCheck,
+  Clock,
   Copy,
   Image as ImageIcon,
   MoreHorizontal,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import { REACTIONS_FREE, REACTIONS_PREMIUM } from "../constants";
 import { ChatMessage } from "../types";
+import { messageStatus } from "../utils/messageStatus";
 import { renderWithMentions } from "../utils/mentions";
 import UserName from "./UserName";
 
@@ -32,6 +34,8 @@ interface Props {
   onReact?: (message: ChatMessage, emoji: string) => void;
   /** Direct chats: when the other person last read - drives ✓ / ✓✓ on my messages */
   peerReadAt?: string | null;
+  /** Direct chats: when the other person's client last received a message - drives grey ✓✓ */
+  peerDeliveredAt?: string | null;
   onReply?: (message: ChatMessage) => void;
   onEdit?: (message: ChatMessage, text: string) => void;
   onForward?: (message: ChatMessage) => void;
@@ -60,6 +64,7 @@ export default function MessageBubble({
   isPremium,
   onReact,
   peerReadAt,
+  peerDeliveredAt,
   onReply,
   onEdit,
   onForward,
@@ -190,11 +195,7 @@ export default function MessageBubble({
         )}
         <div className="message-time">
           {formatTime(message.createdAt)}
-          {isOwn && peerReadAt !== undefined && (
-            <span className={`message-ticks ${peerReadAt && new Date(peerReadAt) >= new Date(message.createdAt) ? "read" : ""}`}>
-              {peerReadAt && new Date(peerReadAt) >= new Date(message.createdAt) ? <CheckCheck size={14} /> : <Check size={14} />}
-            </span>
-          )}
+          {isOwn && peerReadAt !== undefined && <MessageTicks message={message} peerReadAt={peerReadAt} peerDeliveredAt={peerDeliveredAt} />}
         </div>
         {onReact && (
           <button type="button" className="message-react-btn" onClick={() => { setPicking((v) => !v); setMenuOpen(false); }} title="Реакція">
@@ -286,6 +287,16 @@ export default function MessageBubble({
         )}
       </div>
     </div>
+  );
+}
+
+function MessageTicks({ message, peerReadAt, peerDeliveredAt }: { message: ChatMessage; peerReadAt: string | null; peerDeliveredAt?: string | null }) {
+  const status = messageStatus({ pending: !!message.pending, createdAt: message.createdAt, peerReadAt, peerDeliveredAt });
+  const label = { pending: "Надсилається", sent: "Надіслано", delivered: "Доставлено", read: "Прочитано" }[status];
+  return (
+    <span className={`message-ticks ${status}`} title={label} aria-label={label}>
+      {status === "pending" ? <Clock size={13} /> : status === "sent" ? <Check size={14} /> : <CheckCheck size={14} />}
+    </span>
   );
 }
 

@@ -79,6 +79,8 @@ export interface ChatSummary {
   lastMessage: { content: string; createdAt: string; senderId: string } | null;
   /** uid -> when that member last read the chat (drives unread badges and ✓✓) */
   readBy: Record<string, string>;
+  /** uid -> when that member's client last received a message (✓✓ grey). Direct chats only. */
+  deliveredTo?: Record<string, string>;
   updatedAt: string;
   /** id of the message shown in the pinned banner at the top of the chat */
   pinnedMessageId?: string | null;
@@ -106,6 +108,8 @@ export interface ChatMessage {
   content: string;
   type: "text" | "image" | "poll";
   createdAt: string;
+  /** true while the write is still local (queued/offline) - shown as ⏳ */
+  pending?: boolean;
   editedAt?: string | null;
   sender: MessageSender;
   /** emoji -> uids that reacted with it */

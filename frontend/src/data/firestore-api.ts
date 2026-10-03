@@ -424,6 +424,9 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
     readBy: Object.fromEntries(
       Object.entries((d.readBy as Record<string, unknown>) ?? {}).map(([uid, ts]) => [uid, tsToIso(ts)])
     ),
+    deliveredTo: Object.fromEntries(
+      Object.entries((d.deliveredTo as Record<string, unknown>) ?? {}).map(([uid, ts]) => [uid, tsToIso(ts)])
+    ),
     updatedAt: d.updatedAt ? tsToIso(d.updatedAt) : tsToIso(d.createdAt),
     pinnedMessageId: (d.pinnedMessageId as string) ?? null,
   };
@@ -465,6 +468,13 @@ export async function setChatPinned(uid: string, chatId: string, pinned: boolean
 /** Marks the chat as read by this user up to now (server time). */
 export async function markChatRead(chatId: string, uid: string): Promise<void> {
   await updateDoc(doc(db, "chats", chatId), new FieldPath("readBy", uid), serverTimestamp()).catch(() => {});
+}
+
+/** Records that this user's client has received the chat's latest message
+ * (✓✓ grey for the sender). Silently ignored when rules deny it - e.g.
+ * before the updated firestore.rules are published. */
+export async function markChatDelivered(chatId: string, uid: string): Promise<void> {
+  await updateDoc(doc(db, "chats", chatId), new FieldPath("deliveredTo", uid), serverTimestamp()).catch(() => {});
 }
 
 /** How many messages arrived after `sinceIso` (server-side count, cheap). */
@@ -688,7 +698,7 @@ export async function pinMessage(chatId: string, messageId: string | null): Prom
 
 /* ---------------- messages ---------------- */
 
-function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, chatId: string): ChatMessage {
+function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, chatId: string, pending = false): ChatMessage {
   const d = snap.data();
   const rawPoll = d.poll as { question: string; options: string[]; votes?: Record<string, string[]> } | undefined;
   return {
@@ -697,6 +707,7 @@ function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, c
     content: d.content as string,
     type: d.type === "image" ? "image" : d.type === "poll" ? "poll" : "text",
     createdAt: tsToIso(d.createdAt),
+    pending,
     sender: {
       id: d.senderUid as string,
       username: (d.senderUsername as string) ?? "",
@@ -717,8 +728,20 @@ function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, c
  * to reveal older history. */
 export function subscribeMessages(chatId: string, cb: (messages: ChatMessage[]) => void, count = 60) {
   const qy = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc"), limit(count));
-  return onSnapshot(qy, (snap) => {
-    cb(snap.docs.map((d) => mapMessage(d, chatId)).reverse());
+  // includeMetadataChanges: fires again when a queued write is acknowledged,
+  // so ⏳ turns into ✓. "estimate" gives a pending serverTimestamp a local
+  // time instead of null, so the message keeps its place in the list.
+  return onSnapshot(qy, { includeMetadataChanges: true }, (snap) => {
+    cb(
+      snap.docs
+        .map((d) => {
+          // pending = this message itself is still unacknowledged (its
+          // serverTimestamp is unresolved), not just e.g. a fresh reaction on it
+          const pending = d.metadata.hasPendingWrites && d.data().createdAt == null;
+          return mapMessage({ id: d.id, data: () => d.data({ serverTimestamps: "estimate" }) }, chatId, pending);
+        })
+        .reverse()
+    );
   });
 }
 

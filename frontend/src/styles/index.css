@@ -2726,6 +2726,11 @@ textarea {
   letter-spacing: -2px;
 }
 
+.message-ticks.pending {
+  opacity: 0.5;
+  letter-spacing: normal;
+}
+
 .message-ticks.read {
   color: var(--accent);
   opacity: 1;

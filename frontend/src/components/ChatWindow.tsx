@@ -416,6 +416,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
               onJump={jumpTo}
               highlight={highlightId === m.id}
               peerReadAt={!isGroup && !chat.isSaved && chat.peerId ? chat.readBy[chat.peerId] ?? null : undefined}
+              peerDeliveredAt={!isGroup && !chat.isSaved && chat.peerId ? chat.deliveredTo?.[chat.peerId] ?? null : undefined}
               onVote={handleVote}
               canPin={canPin}
               isPinned={chat.pinnedMessageId === m.id}

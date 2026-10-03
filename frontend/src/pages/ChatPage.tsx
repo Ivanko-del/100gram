@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { markChatRead, subscribeChats, subscribePublicProfile } from "../data/firestore-api";
+import { markChatDelivered, markChatRead, subscribeChats, subscribePublicProfile } from "../data/firestore-api";
 import { useUnreadCounts } from "../hooks/useUnreadCounts";
 import { useAuth } from "../context/AuthContext";
 import { playNotificationSound } from "../utils/sound";
+import { needsDeliveryReceipt } from "../utils/messageStatus";
 import Sidebar from "../components/Sidebar";
 import ChatWindow from "../components/ChatWindow";
 import LockPrompt from "../components/LockPrompt";
@@ -99,6 +100,25 @@ export default function ChatPage() {
     initKey.split(",").forEach((id) => markChatRead(id, user.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initKey, user?.id]);
+
+  // Delivery receipts: when a chat list update brings a new message from
+  // someone else in a DM, record "delivered" once per message. `receipts`
+  // remembers what was already sent so the snapshot echo of our own write
+  // can never trigger another one. (A failed write - e.g. rules not yet
+  // published - is not retried until the next new message.)
+  const receipts = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!user) return;
+    for (const c of chats) {
+      const open = c.id === openChatIdRef.current && document.visibilityState === "visible";
+      if (!needsDeliveryReceipt(c, user.id, open)) continue;
+      const key = `${c.id}:${c.lastMessage?.createdAt}`;
+      if (receipts.current.has(key)) continue;
+      receipts.current.add(key);
+      markChatDelivered(c.id, user.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chats, user?.id]);
 
   const unreadCounts = useUnreadCounts(chats, user?.id);
   const totalUnread = Object.entries(unreadCounts)
