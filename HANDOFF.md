@@ -246,12 +246,13 @@ pardon-на-чат) **підтверджена опублікованою** ко
   гілку, познач це в HANDOFF і фактично фаст-форварднь `main` разом з нею
   (`git push origin HEAD:main`), інакше розбіжність повернеться й знову
   зламає прод користувачу.
-- Vercel-проєкт `100gram-dcz1`: за попередньою нотаткою, автодеплой з
-  `main` міг створювати лише preview (Production Branch у Settings → Git,
-  можливо, не `main`), і production доводилось викочувати вручну через
-  `create_deployment` з `target: production`. Якщо ще не перевірено цю
-  сесію — варто зайти в Vercel Settings → Git і виставити Production
-  Branch = `main`, щоб push у `main` сам тягнув production без ручного кроку.
+- Vercel-проєкт `100gram-dcz1`: **Production Branch = `main`** (Settings →
+  Environments → Production → Branch Tracking, виставлено користувачем).
+  Пуш у `main` сам тягне production-деплой; ручний `create_deployment` з
+  `target: production` більше не потрібен. Раніше production брався з гілки
+  `claude/telegram-100-gram-clone-fuadhq`, і пуші в `main` давали лише preview.
+- SPA-rewrite для прямих посилань (`/join/..`, `/chat/..`) лежить у `vercel.json`
+  (у `frontend/` і в корені) - не видаляти, інакше deep-посилання дадуть 404.
 - `firestore.rules` — вручну в Console → Publish, користувач підтвердив
   останню версію опублікованою.
 
