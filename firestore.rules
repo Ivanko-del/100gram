@@ -42,7 +42,14 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if isSignedIn();
-      allow create: if isOwner(uid);
+      // A profile may only claim a username it has actually reserved: the
+      // reservation (usernames/{usernameLower} -> this uid) is written in the
+      // same transaction, hence getAfter(). Without this check anyone could
+      // create their profile with usernameLower "theivankoo" and thereby pass
+      // isSiteAdmin().
+      allow create: if isOwner(uid)
+        && request.resource.data.usernameLower is string
+        && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.usernameLower)).data.uid == uid;
       // Profile fields are self-editable. This does not stop a client from
       // rewriting its own `grams`/`isPremium` directly - real money-grade
       // integrity would need Cloud Functions to own those fields server-side.
@@ -121,7 +128,12 @@ service cloud.firestore {
       // `resource == null` covers the "does this chat already exist"
       // probe a client makes before creating a new direct chat: the doc
       // isn't there yet, so there is no membership to check.
-      allow read: if isSignedIn() && (resource == null || request.auth.uid in resource.data.memberUids);
+      // A public group/channel (isPublic: true) is readable by any signed-in
+      // user so it can be found in search and previewed before joining; its
+      // messages stay members-only. A doc without the flag is private.
+      allow read: if isSignedIn() && (resource == null
+        || request.auth.uid in resource.data.memberUids
+        || resource.data.isPublic == true);
       allow create: if isSignedIn() && request.auth.uid in request.resource.data.memberUids
         // whoever creates a channel must be listed as one of its admins
         && (request.resource.data.isChannel != true || request.auth.uid in request.resource.data.adminUids);
@@ -157,6 +169,25 @@ service cloud.firestore {
       function isPinChange() {
         return request.resource.data.diff(resource.data).affectedKeys().hasOnly(["pinnedMessageId"]);
       }
+      // Joining a group/channel yourself. Touches nothing but memberUids
+      // (gains exactly your own uid) and your own memberProfiles entry. Public
+      // chats are open to anyone; a private one needs the invite code, which
+      // the joiner sends inside their own profile entry (`joinCode`) and which
+      // must equal the chat's stored `inviteCode` - non-members cannot read
+      // that, so only someone holding the link can produce it.
+      function isSelfJoin() {
+        let me = request.auth.uid;
+        return !(me in resource.data.memberUids)
+          && resource.data.get('isGroup', false) == true
+          && request.resource.data.memberUids.toSet() == resource.data.memberUids.toSet().union([me].toSet())
+          && request.resource.data.adminUids == resource.data.adminUids
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["memberUids", "memberProfiles"])
+          && request.resource.data.memberProfiles.diff(resource.data.get('memberProfiles', {})).affectedKeys().hasOnly([me])
+          && (resource.data.get('isPublic', false) == true
+            || (resource.data.get('inviteCode', null) != null
+              && request.resource.data.memberProfiles[me].get('joinCode', null) == resource.data.inviteCode));
+      }
+      allow update: if isSignedIn() && isSelfJoin();
       allow update: if isSignedIn() && request.auth.uid in resource.data.memberUids
         && (
           // any member may bump the "last message" preview when sending and
@@ -212,14 +243,17 @@ service cloud.firestore {
             || (resource.data.senderUid == request.auth.uid
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["content", "editedAt"]))
           );
-        // Anyone may delete their own message; the site admin may delete
-        // any message anywhere, for moderation.
-        allow delete: if isSignedIn() && (resource.data.senderUid == request.auth.uid || isSiteAdmin());
+        // Anyone may delete their own message; the admins of a group/channel
+        // may clean up their chat, and the site admin may delete any message
+        // anywhere, for moderation.
+        allow delete: if isSignedIn()
+          && (resource.data.senderUid == request.auth.uid || isChatAdmin() || isSiteAdmin());
       }
 
       match /typing/{uid} {
         allow read: if isSignedIn() && request.auth.uid in chatData().memberUids;
-        allow write: if isOwner(uid);
+        // only members may leave typing marks in a chat
+        allow write: if isOwner(uid) && request.auth.uid in chatData().memberUids;
       }
     }
   }

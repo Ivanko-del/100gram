@@ -3,6 +3,13 @@ export interface UserBadge {
   color: string;
 }
 
+/** A user-made tab in the chat list ("Telegram folders"): a named set of chats. */
+export interface ChatFolder {
+  id: string;
+  name: string;
+  chatIds: string[];
+}
+
 export interface User {
   id: string;
   username: string;
@@ -37,6 +44,7 @@ export interface User {
   archivedChats?: string[];
   /** chatId -> ISO time the user removed it; it comes back on a newer message */
   hiddenChats?: Record<string, string>;
+  chatFolders?: ChatFolder[];
   badge?: UserBadge | null;
   showAdminBadge?: boolean;
 }
@@ -84,6 +92,10 @@ export interface ChatSummary {
   updatedAt: string;
   /** id of the message shown in the pinned banner at the top of the chat */
   pinnedMessageId?: string | null;
+  /** Groups/channels: findable in search and joinable by anyone. Missing = private. */
+  isPublic?: boolean;
+  /** Private groups/channels: secret part of the invite link (members only can read it) */
+  inviteCode?: string | null;
 }
 
 export interface PollData {

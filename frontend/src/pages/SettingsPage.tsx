@@ -4,18 +4,30 @@ import {
   ArrowLeft,
   Bell,
   Cake,
+  Camera,
   Clock,
+  BatteryCharging,
   CornerDownLeft,
   Crown,
   Flag,
+  FolderOpen,
+  Gift,
+  HardDrive,
+  CircleQuestionMark,
+  KeyRound,
+  Lightbulb,
+  MessageCircleQuestionMark,
+  ShieldCheck,
   LayoutList,
   Lock,
+  LogOut,
   MessageSquare,
   Palette,
-  Shield,
+  Star,
   User as UserIcon,
   Wallet,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import {
   DataError,
   assertOnline,
@@ -37,12 +49,11 @@ import {
   transferGrams,
   updateProfile,
 } from "../data/firestore-api";
-import { AXIOMA_EXCHANGE_RATE, AxiomaError, withdrawFromAxioma } from "../axioma";
+import { AXIOMA_EXCHANGE_RATE, AxiomaError, chargeAxiomaThen } from "../axioma";
 import { useAuth } from "../context/AuthContext";
 import { useAxioma } from "../hooks/useAxioma";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import { compressImageToDataUrl } from "../utils/image";
-import { isSoundEnabled, playNotificationSound, setSoundEnabled } from "../utils/sound";
 import {
   AVATAR_COLORS,
   FREE_BIO_LIMIT,
@@ -71,6 +82,11 @@ import LockPrompt from "../components/LockPrompt";
 import LockSetupModal from "../components/LockSetupModal";
 import { clearChatLock } from "../data/chat-lock";
 import { useChatLock } from "../context/ChatLockContext";
+import DataTab from "./settings/DataTab";
+import FoldersTab from "./settings/FoldersTab";
+import { FaqTab, FeaturesTab, PolicyTab } from "./settings/InfoTabs";
+import NotificationsTab from "./settings/NotificationsTab";
+import PowerTab from "./settings/PowerTab";
 import {
   Accent,
   ChatBackground,
@@ -89,16 +105,53 @@ import {
   setFontSize,
 } from "../utils/prefs";
 
-type Tab = "profile" | "appearance" | "chats" | "privacy" | "wallet" | "premium" | "account" | "reports";
+type Tab =
+  | "profile"
+  | "appearance"
+  | "chats"
+  | "notifications"
+  | "privacy"
+  | "data"
+  | "folders"
+  | "power"
+  | "wallet"
+  | "premium"
+  | "account"
+  | "reports"
+  | "faq"
+  | "features"
+  | "policy";
 
 interface TabProps {
   user: User;
+}
+
+/** Opens the chat with the site admin (the app's "support"). */
+function useSupportChat(user: User | null) {
+  const navigate = useNavigate();
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function open() {
+    if (!user) return;
+    setError(null);
+    setStarting(true);
+    try {
+      navigate(`/chat/${await startDirectChat(user, SITE_ADMIN_USERNAME)}`);
+    } catch (err) {
+      setError(err instanceof DataError ? err.message : "Не вдалося відкрити підтримку");
+      setStarting(false);
+    }
+  }
+
+  return { open, starting, error };
 }
 
 export default function SettingsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
+  const support = useSupportChat(user);
   // The chat-list drawer can deep-link straight into a tab (wallet, premium)
   const initialTab = (location.state as { tab?: Tab } | null)?.tab;
   const [tab, setTab] = useState<Tab>(initialTab ?? "profile");
@@ -115,48 +168,78 @@ export default function SettingsPage() {
   return (
     <div className={`settings-layout ${tabOpened ? "mobile-show-detail" : ""}`}>
       <aside className="settings-nav">
-        <button className="icon-btn back-btn" onClick={() => navigate("/")}>
-          <ArrowLeft size={18} className="inline-icon" /> Назад до чатів
-        </button>
-        <button type="button" className="settings-profile-preview" onClick={() => setShowOwnProfile(true)}>
-          <Avatar name={user.displayName} color={user.avatarColor} photoUrl={user.avatarUrl} size={72} isPremium={user.isPremium} />
+        <div className="settings-nav-top">
+          <button type="button" className="header-icon-btn" onClick={() => navigate("/")} aria-label="Назад до чатів">
+            <ArrowLeft size={22} />
+          </button>
+        </div>
+
+        <div className="settings-hero">
+          <div className="settings-hero-avatar">
+            <button type="button" className="settings-hero-avatar-btn" onClick={() => setShowOwnProfile(true)} aria-label="Мій профіль">
+              <Avatar name={user.displayName} color={user.avatarColor} photoUrl={user.avatarUrl} size={96} isPremium={user.isPremium} />
+            </button>
+            <button type="button" className="settings-hero-camera" onClick={() => openTab("profile")} aria-label="Змінити фото">
+              <Camera size={18} />
+            </button>
+          </div>
           <div className="settings-profile-name">{user.displayName}</div>
           <div className="settings-profile-username">@{user.username}</div>
-          {user.isPremium && <div className="premium-chip">⭐ Преміум активний</div>}
-        </button>
+        </div>
         {showOwnProfile && <UserProfileModal uid={user.id} onClose={() => setShowOwnProfile(false)} />}
-        <nav>
-          <button className={tab === "profile" ? "active" : ""} onClick={() => openTab("profile")}>
-            <UserIcon size={17} className="inline-icon" /> Профіль
-          </button>
-          <button className={tab === "appearance" ? "active" : ""} onClick={() => openTab("appearance")}>
-            <Palette size={17} className="inline-icon" /> Вигляд
-          </button>
-          <button className={tab === "chats" ? "active" : ""} onClick={() => openTab("chats")}>
-            <MessageSquare size={17} className="inline-icon" /> Чати і сповіщення
-          </button>
-          <button className={tab === "privacy" ? "active" : ""} onClick={() => openTab("privacy")}>
-            <Shield size={17} className="inline-icon" /> Конфіденційність
-          </button>
-          <div className="settings-nav-divider">Гаманець і підписка</div>
-          <button className={tab === "wallet" ? "active" : ""} onClick={() => openTab("wallet")}>
-            <Wallet size={17} className="inline-icon" /> Гаманець · {user.grams} ГРАМ
-          </button>
-          <button className={tab === "premium" ? "active" : ""} onClick={() => openTab("premium")}>
-            <Crown size={17} className="inline-icon" /> Преміум
-          </button>
-          <button className={tab === "account" ? "active" : ""} onClick={() => openTab("account")}>
-            <Lock size={17} className="inline-icon" /> Акаунт
-          </button>
+
+        <nav className="settings-groups">
+          <div className="settings-group">
+            <NavRow icon={<UserIcon size={18} />} color="#3b9cf0" label="Профіль" active={tab === "profile"} onClick={() => openTab("profile")} />
+            <NavRow icon={<KeyRound size={18} />} color="#e5546a" label="Акаунт" active={tab === "account"} onClick={() => openTab("account")} />
+            <NavRow icon={<MessageSquare size={18} />} color="#f0a03b" label="Налаштування чатів" active={tab === "chats"} onClick={() => openTab("chats")} />
+            <NavRow icon={<Lock size={18} />} color="#4cb05a" label="Конфіденційність" active={tab === "privacy"} onClick={() => openTab("privacy")} />
+            <NavRow icon={<Bell size={18} />} color="#ef5350" label="Сповіщення" active={tab === "notifications"} onClick={() => openTab("notifications")} />
+            <NavRow icon={<HardDrive size={18} />} color="#4a7cf0" label="Дані та сховище" active={tab === "data"} onClick={() => openTab("data")} />
+            <NavRow icon={<FolderOpen size={18} />} color="#1e9be8" label="Папки для чатів" active={tab === "folders"} onClick={() => openTab("folders")} />
+            <NavRow icon={<BatteryCharging size={18} />} color="#e8761e" label="Економія енергії" active={tab === "power"} onClick={() => openTab("power")} />
+            <NavRow icon={<Palette size={18} />} color="#8e6cf0" label="Вигляд" active={tab === "appearance"} onClick={() => openTab("appearance")} />
+          </div>
+
+          <div className="settings-group">
+            <NavRow
+              icon={<Star size={18} />}
+              color="linear-gradient(135deg, #8e6cf0, #5b8def)"
+              label="Преміум"
+              value={user.isPremium ? "Активний" : undefined}
+              active={tab === "premium"}
+              onClick={() => openTab("premium")}
+            />
+            <NavRow icon={<Wallet size={18} />} color="#29a9c4" label="Гаманець" value={`${user.grams} ГРАМ`} active={tab === "wallet"} onClick={() => openTab("wallet")} />
+            <NavRow icon={<Gift size={18} />} color="#f0842c" label="Надіслати подарунок" onClick={() => openTab("wallet")} />
+          </div>
+
           {isSiteAdmin(user.username) && (
-            <button className={tab === "reports" ? "active" : ""} onClick={() => openTab("reports")}>
-              <Flag size={17} className="inline-icon" /> 🚩 Скарги
-            </button>
+            <div className="settings-group">
+              <NavRow icon={<Flag size={18} />} color="#e5546a" label="🚩 Скарги" active={tab === "reports"} onClick={() => openTab("reports")} />
+            </div>
           )}
+
+          <div className="settings-nav-divider">Допомога</div>
+          <div className="settings-group">
+            {!isSiteAdmin(user.username) && (
+              <NavRow
+                icon={<MessageCircleQuestionMark size={18} />}
+                color="#f0a03b"
+                label={support.starting ? "Відкриваємо…" : "Поставити запитання"}
+                onClick={support.open}
+              />
+            )}
+            <NavRow icon={<CircleQuestionMark size={18} />} color="#2f8fe6" label="Часті питання" active={tab === "faq"} onClick={() => openTab("faq")} />
+            <NavRow icon={<Lightbulb size={18} />} color="#8e6cf0" label="Можливості 100 ГРАМ" active={tab === "features"} onClick={() => openTab("features")} />
+            <NavRow icon={<ShieldCheck size={18} />} color="#4cb05a" label="Політика конфіденційності" active={tab === "policy"} onClick={() => openTab("policy")} />
+          </div>
+          {support.error && <div className="auth-error">{support.error}</div>}
+
+          <div className="settings-group">
+            <NavRow icon={<LogOut size={18} />} color="#e5546a" label="Вийти" danger onClick={() => logout()} />
+          </div>
         </nav>
-        <button className="logout-btn" onClick={() => logout()}>
-          Вийти
-        </button>
       </aside>
 
       <main className="settings-content">
@@ -166,6 +249,13 @@ export default function SettingsPage() {
         {tab === "profile" && <ProfileTab user={user} />}
         {tab === "appearance" && <AppearanceTab user={user} />}
         {tab === "chats" && <ChatsTab />}
+        {tab === "notifications" && <NotificationsTab user={user} />}
+        {tab === "data" && <DataTab />}
+        {tab === "folders" && <FoldersTab user={user} />}
+        {tab === "power" && <PowerTab />}
+        {tab === "faq" && <FaqTab />}
+        {tab === "features" && <FeaturesTab />}
+        {tab === "policy" && <PolicyTab />}
         {tab === "privacy" && <PrivacyTab user={user} />}
         {tab === "wallet" && <WalletTab user={user} />}
         {tab === "premium" && <PremiumTab user={user} />}
@@ -173,6 +263,36 @@ export default function SettingsPage() {
         {tab === "reports" && isSiteAdmin(user.username) && <ReportsTab />}
       </main>
     </div>
+  );
+}
+
+/** One row of the settings list: a coloured icon square, a label and an
+ * optional value on the right, like the Telegram settings screen. */
+function NavRow({
+  icon,
+  color,
+  label,
+  value,
+  active,
+  danger,
+  onClick,
+}: {
+  icon: ReactNode;
+  color: string;
+  label: string;
+  value?: string;
+  active?: boolean;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={`settings-row ${active ? "active" : ""} ${danger ? "danger" : ""}`} onClick={onClick}>
+      <span className="settings-row-icon" style={{ background: color }}>
+        {icon}
+      </span>
+      <span className="settings-row-label">{label}</span>
+      {value && <span className="settings-row-value">{value}</span>}
+    </button>
   );
 }
 
@@ -192,7 +312,6 @@ function ProfileTab({ user }: TabProps) {
   const [nameColor, setNameColor] = useState(user.nameColor ?? "");
   const [banner, setBanner] = useState(user.profileBanner ?? "");
   const [gifUrl, setGifUrl] = useState("");
-  const [premiumHint, setPremiumHint] = useState(false);
 
   async function applyGifAvatar() {
     const url = gifUrl.trim();
@@ -215,12 +334,17 @@ function ProfileTab({ user }: TabProps) {
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
+    const name = displayName.trim();
+    if (!name) {
+      setError("Ім'я не може бути порожнім");
+      return;
+    }
     setSaving(true);
     setError(null);
     setSaved(false);
     try {
       await updateProfile(user.id, {
-        displayName,
+        displayName: name,
         bio,
         avatarColor,
         birthDate: birthDate || null,
@@ -569,25 +693,11 @@ function AppearanceTab({ user }: TabProps) {
 }
 
 function ChatsTab() {
-  const [soundOn, setSoundOn] = useState(isSoundEnabled);
   const [enterSends, setEnterSendsState] = useState(isEnterSends);
-
-  function toggleSound() {
-    const next = !soundOn;
-    setSoundOn(next);
-    setSoundEnabled(next);
-    if (next) playNotificationSound();
-  }
 
   return (
     <div className="settings-panel">
-      <h2>Чати і сповіщення</h2>
-
-      <h3>Сповіщення</h3>
-      <label className="switch-row">
-        <span><Bell size={16} className="inline-icon" /> Звук при новому повідомленні</span>
-        <input type="checkbox" checked={soundOn} onChange={toggleSound} />
-      </label>
+      <h2>Налаштування чатів</h2>
 
       <h3>Надсилання</h3>
       <label className="switch-row">
@@ -610,7 +720,8 @@ function ChatsTab() {
       <h3>Керування чатами</h3>
       <p className="settings-hint">
         Утримуй чат у списку (на ПК — права кнопка миші), щоб закріпити його, відправити в архів або видалити. Архів
-        ховається над списком — потягни список вниз, щоб його відкрити. «Збережене» знайдеш у меню ☰.
+        ховається над списком — потягни список вниз, щоб його відкрити. «Збережене» знайдеш у меню ☰. Чати можна
+        зібрати у вкладки в розділі «Папки для чатів».
       </p>
     </div>
   );
@@ -1034,8 +1145,9 @@ function PremiumTab({ user }: TabProps) {
     setSuccess(null);
     try {
       assertOnline(); // before the card is charged, not after
-      await withdrawFromAxioma(plan.price / AXIOMA_EXCHANGE_RATE, `Преміум 100 ГРАМ: ${plan.label}`);
-      await grantPremiumFromAxioma(user.id, plan);
+      await chargeAxiomaThen(plan.price / AXIOMA_EXCHANGE_RATE, `Преміум 100 ГРАМ: ${plan.label}`, () =>
+        grantPremiumFromAxioma(user.id, plan)
+      );
       setSuccess(`Преміум активовано карткою Аксіоми: ${plan.label} ✓`);
     } catch (e2) {
       setError(e2 instanceof AxiomaError || e2 instanceof DataError ? e2.message : "Не вдалося оплатити карткою Аксіоми");
@@ -1310,7 +1422,6 @@ function ReportsTab() {
 
 function AccountTab({ user }: TabProps) {
   const { logout } = useAuth();
-  const navigate = useNavigate();
   const email = getCurrentEmail();
   const isMeSiteAdmin = isSiteAdmin(user.username);
 
@@ -1325,24 +1436,10 @@ function AccountTab({ user }: TabProps) {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const [startingSupport, setStartingSupport] = useState(false);
-  const [supportError, setSupportError] = useState<string | null>(null);
+  const support = useSupportChat(user);
 
   const [showAdminBadge, setShowAdminBadge] = useState(!!user.showAdminBadge);
   const [savingAdminBadge, setSavingAdminBadge] = useState(false);
-
-  async function openSupport() {
-    setSupportError(null);
-    setStartingSupport(true);
-    try {
-      const chatId = await startDirectChat(user, SITE_ADMIN_USERNAME);
-      navigate(`/chat/${chatId}`);
-    } catch (err) {
-      setSupportError(err instanceof DataError ? err.message : "Не вдалося відкрити підтримку");
-    } finally {
-      setStartingSupport(false);
-    }
-  }
 
   async function toggleAdminBadge() {
     const next = !showAdminBadge;
@@ -1405,10 +1502,10 @@ function AccountTab({ user }: TabProps) {
 
       {!isMeSiteAdmin && (
         <div>
-          <button className="btn-ghost" type="button" onClick={openSupport} disabled={startingSupport}>
-            {startingSupport ? "Відкриття…" : "🆘 Підтримка"}
+          <button className="btn-ghost" type="button" onClick={support.open} disabled={support.starting}>
+            {support.starting ? "Відкриття…" : "🆘 Підтримка"}
           </button>
-          {supportError && <div className="auth-error">{supportError}</div>}
+          {support.error && <div className="auth-error">{support.error}</div>}
         </div>
       )}
 

@@ -23,4 +23,15 @@ describe("renderWithMentions", () => {
   it("does not treat a bare @ or a too-short handle as a mention", () => {
     expect(renderWithMentions("email me at a@b")).toBe("email me at a@b");
   });
+
+  it("does not treat the @ inside an e-mail address as a mention", () => {
+    const result = renderWithMentions("пиши на ivan@mail.com");
+    const nodes = Array.isArray(result) ? result : [result];
+    expect(nodes.some((n) => isValidElement(n) && (n.props as { className?: string }).className === "mention")).toBe(false);
+  });
+
+  it("hands mentions to a custom renderer when one is given", () => {
+    const result = renderWithMentions("привіт @ivan!", (token, key) => `[${token}:${key}]`) as unknown[];
+    expect(result).toContain("[@ivan:1]");
+  });
 });

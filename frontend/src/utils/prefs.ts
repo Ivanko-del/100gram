@@ -16,6 +16,7 @@ const KEYS = {
   compact: "stogram_compact",
   enterSends: "stogram_enter_sends",
   accent: "stogram_accent",
+  power: "stogram_power",
 } as const;
 
 function read(key: string): string | null {
@@ -90,8 +91,59 @@ export function setEnterSends(v: boolean) {
   write(KEYS.enterSends, v ? "1" : "0");
 }
 
+/** Power saving: "on" always, "auto" only while the battery is low. */
+export type PowerSaving = "off" | "on" | "auto";
+
+export function getPowerSaving(): PowerSaving {
+  const v = read(KEYS.power);
+  return v === "on" || v === "auto" ? v : "off";
+}
+
+export function setPowerSaving(v: PowerSaving) {
+  write(KEYS.power, v);
+  applyPrefs();
+}
+
+const LOW_BATTERY_LEVEL = 0.2;
+let batteryLow = false;
+
+interface BatteryManager extends EventTarget {
+  level: number;
+  charging: boolean;
+}
+
+/** The Battery Status API only exists in Chromium browsers. */
+export function canWatchBattery(): boolean {
+  return typeof navigator !== "undefined" && "getBattery" in navigator;
+}
+
+/** Keeps "auto" power saving in step with the battery (no-op where unsupported). */
+export function watchBattery() {
+  if (!canWatchBattery()) return;
+  (navigator as Navigator & { getBattery: () => Promise<BatteryManager> })
+    .getBattery()
+    .then((battery) => {
+      const update = () => {
+        batteryLow = !battery.charging && battery.level <= LOW_BATTERY_LEVEL;
+        applyPrefs();
+      };
+      battery.addEventListener("levelchange", update);
+      battery.addEventListener("chargingchange", update);
+      update();
+    })
+    .catch(() => {
+      /* battery info denied - "auto" simply never switches on */
+    });
+}
+
+export function isPowerSavingActive(): boolean {
+  const mode = getPowerSaving();
+  return mode === "on" || (mode === "auto" && batteryLow);
+}
+
 export function applyPrefs() {
   const root = document.documentElement;
+  root.dataset.powersave = isPowerSavingActive() ? "1" : "0";
   root.dataset.font = getFontSize();
   root.dataset.chatBg = getChatBackground();
   root.dataset.accent = getAccent();

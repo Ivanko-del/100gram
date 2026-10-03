@@ -18,11 +18,12 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { REACTIONS_FREE, REACTIONS_PREMIUM } from "../constants";
+import { MAX_MESSAGE_LENGTH, REACTIONS_FREE, REACTIONS_PREMIUM } from "../constants";
 import { ChatMessage } from "../types";
 import { messageStatus } from "../utils/messageStatus";
 import { renderWithMentions } from "../utils/mentions";
 import UserName from "./UserName";
+import MentionLink from "./MentionLink";
 
 interface Props {
   message: ChatMessage;
@@ -51,6 +52,10 @@ interface Props {
   onUnpin?: () => void;
   /** report this (someone else's) message */
   onReport?: (message: ChatMessage) => void;
+  /** a @username in the text was clicked and resolved to this user id */
+  onMentionOpen?: (uid: string) => void;
+  /** a @username in the text belongs to nobody */
+  onMentionMissing?: (username: string) => void;
 }
 
 function formatTime(iso: string) {
@@ -79,6 +84,8 @@ export default function MessageBubble({
   onPin,
   onUnpin,
   onReport,
+  onMentionOpen,
+  onMentionMissing,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -171,7 +178,7 @@ export default function MessageBubble({
               setEditing(false);
             }}
           >
-            <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} autoFocus />
+            <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} maxLength={MAX_MESSAGE_LENGTH} autoFocus />
             <div className="message-edit-actions">
               <button type="submit" className="btn-primary">Зберегти</button>
               <button type="button" className="btn-ghost" onClick={() => setEditing(false)}>Скасувати</button>
@@ -179,7 +186,9 @@ export default function MessageBubble({
           </form>
         ) : (
           <div className="message-content">
-            {renderWithMentions(message.content)}
+            {renderWithMentions(message.content, (token, key) => (
+              <MentionLink key={key} token={token} onOpen={onMentionOpen} onMissing={onMentionMissing} />
+            ))}
             {message.editedAt && <span className="message-edited"> (ред.)</span>}
           </div>
         )}

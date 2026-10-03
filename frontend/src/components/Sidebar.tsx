@@ -37,10 +37,12 @@ import { ChatSummary, PublicUser } from "../types";
 import Avatar from "./Avatar";
 import UserName from "./UserName";
 import { useUnreadCounts } from "../hooks/useUnreadCounts";
+import { usePublicChatSearch } from "../hooks/usePublicChatSearch";
 import LockPrompt from "./LockPrompt";
 import LockSetupModal from "./LockSetupModal";
 import { setChatHidden, setChatLocked } from "../data/chat-lock";
 import { useChatLock } from "../context/ChatLockContext";
+import { folderTabId } from "../utils/folders";
 import { FREE_PIN_LIMIT, PREMIUM_PIN_LIMIT, SITE_ADMIN_USERNAME, isSiteAdmin } from "../constants";
 import NewChatModal from "./NewChatModal";
 
@@ -50,7 +52,8 @@ interface SidebarProps {
   onChatCreated: (chatId: string) => void;
 }
 
-type ChatFilter = "all" | "dm" | "group" | "channel";
+/** "all" / "dm" / "group" / "channel", or `f:<id>` for one of the user's folders */
+type ChatFilter = string;
 
 const FILTERS: { id: ChatFilter; label: string }[] = [
   { id: "all", label: "Усі чати" },
@@ -97,6 +100,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PublicUser[]>([]);
   const [searching, setSearching] = useState(false);
+  const { results: publicChats, searching: searchingChats } = usePublicChatSearch(query, user?.id);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -213,16 +217,24 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
   const archivedChats = listed.filter((c) => archived.includes(c.id));
   const activeChats = listed.filter((c) => !archived.includes(c.id));
 
-  const counts: Record<ChatFilter, number> = {
-    all: activeChats.length,
-    dm: activeChats.filter((c) => chatKind(c) === "dm").length,
-    group: activeChats.filter((c) => chatKind(c) === "group").length,
-    channel: activeChats.filter((c) => chatKind(c) === "channel").length,
+  // the user's own folders sit after the built-in tabs
+  const folders = user?.chatFolders ?? [];
+  const tabs = [...FILTERS, ...folders.map((f) => ({ id: folderTabId(f.id), label: f.name }))];
+  const folderOf = (tab: ChatFilter) => folders.find((f) => folderTabId(f.id) === tab);
+  const inFilter = (c: ChatSummary, tab: ChatFilter) => {
+    if (tab === "all") return true;
+    const folder = folderOf(tab);
+    return folder ? folder.chatIds.includes(c.id) : chatKind(c) === tab;
   };
+  // a folder deleted elsewhere must not leave the list stuck on an empty tab
+  const activeFilter = tabs.some((t) => t.id === filter) ? filter : "all";
+  const counts: Record<ChatFilter, number> = Object.fromEntries(
+    tabs.map((t) => [t.id, activeChats.filter((c) => inFilter(c, t.id)).length])
+  );
   const searchText = query.trim().toLowerCase();
   const pool = showVault ? vaultChats : showArchive ? archivedChats : activeChats;
   const filteredChats = pool
-    .filter((c) => (showArchive || showVault || filter === "all" || chatKind(c) === filter) && c.name.toLowerCase().includes(searchText))
+    .filter((c) => (showArchive || showVault || inFilter(c, activeFilter)) && c.name.toLowerCase().includes(searchText))
     .sort((a, b) => Number(pinned.includes(b.id)) - Number(pinned.includes(a.id)));
 
   // Like Telegram: the archive row sits just above the list and is scrolled
@@ -230,7 +242,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
   const archiveRowVisible = !showArchive && !showVault && archivedChats.length > 0 && !searchText;
   useEffect(() => {
     if (archiveRowVisible && listRef.current) listRef.current.scrollTop = ARCHIVE_ROW_HEIGHT;
-  }, [archiveRowVisible, showArchive, showVault, filter]);
+  }, [archiveRowVisible, showArchive, showVault, activeFilter]);
 
   function pressStart(chat: ChatSummary) {
     longPressed.current = false;
@@ -335,12 +347,12 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
 
       {!showArchive && !showVault && (
       <div className="chat-filters" role="tablist">
-        {FILTERS.map((f) => (
+        {tabs.map((f) => (
           <button
             key={f.id}
             role="tab"
-            aria-selected={filter === f.id}
-            className={`chat-filter ${filter === f.id ? "active" : ""}`}
+            aria-selected={activeFilter === f.id}
+            className={`chat-filter ${activeFilter === f.id ? "active" : ""}`}
             onClick={() => setFilter(f.id)}
           >
             {f.label}
@@ -452,6 +464,22 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                   <span className="chat-name">{u.displayName}</span>
                 </div>
                 <div className="chat-list-item-bottom">@{u.username}</div>
+              </div>
+            </button>
+          ))}
+          {(searchingChats || publicChats.length > 0) && (
+            <div className="search-results-title">{searchingChats ? "Шукаємо групи й канали…" : "Публічні групи та канали"}</div>
+          )}
+          {publicChats.map((c) => (
+            <button className="chat-list-item" key={c.id} onClick={() => navigate(`/join/${c.id}`)}>
+              <Avatar name={c.name} color={c.avatarColor} photoUrl={c.avatarUrl} />
+              <div className="chat-list-item-body">
+                <div className="chat-list-item-top">
+                  <span className="chat-name">{c.name}</span>
+                </div>
+                <div className="chat-list-item-bottom">
+                  {c.isChannel ? "Канал" : "Група"} · {c.members.length} {c.isChannel ? "підписників" : "учасників"}
+                </div>
               </div>
             </button>
           ))}

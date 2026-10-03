@@ -5,6 +5,7 @@ import { useUnreadCounts } from "../hooks/useUnreadCounts";
 import { useAuth } from "../context/AuthContext";
 import { playNotificationSound } from "../utils/sound";
 import { needsDeliveryReceipt } from "../utils/messageStatus";
+import { isNotifyPreviewEnabled, showMessageNotification } from "../utils/notify";
 import Sidebar from "../components/Sidebar";
 import ChatWindow from "../components/ChatWindow";
 import LockPrompt from "../components/LockPrompt";
@@ -15,7 +16,10 @@ export default function ChatPage() {
   const { chatId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { isLocked, hasPassword, unlocked } = useChatLock();
+  const lockApi = useChatLock();
+  const { isLocked, hasPassword, unlocked } = lockApi;
+  const lockRef = useRef(lockApi);
+  lockRef.current = lockApi;
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [profiles, setProfiles] = useState<Record<string, User>>({});
@@ -35,13 +39,30 @@ export default function ChatPage() {
         for (const chat of data) {
           const last = chat.lastMessage;
           if (!last || last.senderId === user.id) continue;
-          if (chat.id === openChatIdRef.current) continue;
+          // an open chat only stays silent while the tab is actually in view
+          const isOpen = chat.id === openChatIdRef.current;
+          const openAndVisible = isOpen && !document.hidden;
           const me = userRef.current;
           if (me?.mutedChats?.includes(chat.id)) continue;
           const peerUid = !chat.isGroup ? chat.members.find((m) => m.id !== user.id)?.id : undefined;
           if (peerUid && me?.blockedUids?.includes(peerUid)) continue;
           const seenAt = previous.get(chat.id);
-          if (seenAt !== last.createdAt) playNotificationSound();
+          if (seenAt === last.createdAt || openAndVisible) continue;
+          // (an open chat in a background tab gets a notification but no sound)
+          if (!isOpen) playNotificationSound();
+          // locked or hidden chats must not leak their text onto the lock screen
+          const { isLocked: locked, isHidden: hiddenChat } = lockRef.current;
+          const secret = locked(chat.id) || hiddenChat(chat.id);
+          const sender = chat.members.find((m) => m.id === last.senderId)?.displayName;
+          showMessageNotification(
+            secret ? "100 ГРАМ" : chat.name,
+            secret || !isNotifyPreviewEnabled()
+              ? "Нове повідомлення"
+              : chat.isGroup && sender
+                ? `${sender}: ${last.content}`
+                : last.content,
+            chat.id
+          );
         }
       }
       lastSeenRef.current = new Map(data.map((c) => [c.id, c.lastMessage?.createdAt ?? ""]));
@@ -94,7 +115,10 @@ export default function ChatPage() {
 
   // Chats that predate read tracking get a silent "read now" mark, so old
   // history doesn't light up as unread.
-  const initKey = chats.filter((c) => user && !c.readBy[user.id]).map((c) => c.id).join(",");
+  const initKey = chats
+    .filter((c) => user && !c.readBy[user.id] && Object.keys(c.readBy).length === 0)
+    .map((c) => c.id)
+    .join(",");
   useEffect(() => {
     if (!user || !initKey) return;
     initKey.split(",").forEach((id) => markChatRead(id, user.id));

@@ -142,6 +142,7 @@ export default function MessageInput({ onSend, onSendImage, onSendPoll, onTyping
             value={pollQuestion}
             onChange={(e) => setPollQuestion(e.target.value)}
             placeholder="Питання опитування"
+            maxLength={200}
             autoFocus
           />
           {pollOptions.map((opt, i) => (

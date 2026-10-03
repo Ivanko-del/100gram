@@ -40,7 +40,7 @@ import { auth, db } from "../firebase";
 import { AVATAR_COLORS, WELCOME_BONUS } from "../constants";
 import { clearChatLock } from "./chat-lock";
 import { OFFLINE_MESSAGE, isOfflineError, isOnline } from "../utils/offline";
-import { ChatMessage, ChatSummary, PremiumPlan, PublicUser, Report, User, UserBadge, WalletTransaction } from "../types";
+import { ChatFolder, ChatMessage, ChatSummary, PremiumPlan, PublicUser, Report, User, UserBadge, WalletTransaction } from "../types";
 import { ReportReason, clipReportText, getReportedIds, isReportReason, reportDocId, rememberReported } from "../utils/reports";
 
 export class DataError extends Error {}
@@ -298,15 +298,19 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     pinnedChats: (d.pinnedChats as string[]) ?? [],
     archivedChats: (d.archivedChats as string[]) ?? [],
     hiddenChats: (d.hiddenChats as Record<string, string>) ?? {},
+    chatFolders: (d.chatFolders as ChatFolder[]) ?? [],
     badge: (d.badge as UserBadge) ?? null,
     showAdminBadge: !!d.showAdminBadge,
   };
 }
 
 export function subscribeUser(uid: string, cb: (user: User | null) => void) {
-  return onSnapshot(doc(db, "users", uid), (snap) => {
-    cb(snap.exists() ? mapUser(snap) : null);
-  });
+  return onSnapshot(
+    doc(db, "users", uid),
+    (snap) => cb(snap.exists() ? mapUser(snap) : null),
+    // a denied/failed listener must not leave the app on its loading screen
+    () => cb(null)
+  );
 }
 
 export async function updateProfile(
@@ -430,6 +434,8 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
     ),
     updatedAt: d.updatedAt ? tsToIso(d.updatedAt) : tsToIso(d.createdAt),
     pinnedMessageId: (d.pinnedMessageId as string) ?? null,
+    isPublic: !!d.isPublic,
+    inviteCode: (d.inviteCode as string) ?? null,
   };
 }
 
@@ -495,6 +501,11 @@ export async function setUserBlocked(uid: string, otherUid: string, blocked: boo
   await updateDoc(doc(db, "users", uid), { blockedUids: blocked ? arrayUnion(otherUid) : arrayRemove(otherUid) });
 }
 
+/** Saves the user's chat-list folders (the whole list at once, it is small). */
+export async function setChatFolders(uid: string, folders: ChatFolder[]): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { chatFolders: folders });
+}
+
 /** Presence heartbeat - the timestamp other people's "last seen" is built from. */
 export async function touchLastSeen(uid: string): Promise<void> {
   await updateDoc(doc(db, "users", uid), { lastSeenAt: serverTimestamp() }).catch(() => {});
@@ -530,11 +541,15 @@ export function subscribePublicProfile(uid: string, cb: (u: User | null) => void
 
 export function subscribeChats(myUid: string, cb: (chats: ChatSummary[]) => void) {
   const qy = query(collection(db, "chats"), where("memberUids", "array-contains", myUid));
-  return onSnapshot(qy, (snap) => {
-    const chats = snap.docs.map((d) => mapChat(d, myUid));
-    chats.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    cb(chats);
-  });
+  return onSnapshot(
+    qy,
+    (snap) => {
+      const chats = snap.docs.map((d) => mapChat(d, myUid));
+      chats.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      cb(chats);
+    },
+    () => cb([])
+  );
 }
 
 export async function startDirectChat(me: User, otherUsername: string): Promise<string> {
@@ -578,7 +593,8 @@ export async function createGroupChat(
   creator: User,
   name: string,
   memberUsernames: string[],
-  isChannel: boolean
+  isChannel: boolean,
+  isPublic = false
 ): Promise<string> {
   const trimmedName = name.trim();
   if (!trimmedName) throw new DataError("Вкажи назву");
@@ -610,11 +626,72 @@ export async function createGroupChat(
     memberUids,
     memberProfiles,
     adminUids: [creator.id],
+    isPublic,
+    // private chats are entered only through a link carrying this code
+    inviteCode: isPublic ? null : newInviteCode(),
     lastMessage: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
   return chatId;
+}
+
+function newInviteCode(): string {
+  return crypto.randomUUID().replace(/-/g, "");
+}
+
+/** Public groups/channels whose name or description contains `queryText`.
+ * Firestore has no substring search, so this pulls the public chats (a
+ * single-field equality query, no composite index needed) and filters here. */
+export async function searchPublicChats(queryText: string, myUid: string): Promise<ChatSummary[]> {
+  const q = queryText.trim().toLowerCase().replace(/^@/, "");
+  if (q.length < 2) return [];
+  const snap = await getDocs(query(collection(db, "chats"), where("isPublic", "==", true), limit(200)));
+  return snap.docs
+    .map((d) => mapChat(d, myUid))
+    .filter((c) => c.name.toLowerCase().includes(q) || (c.description ?? "").toLowerCase().includes(q))
+    .sort((a, b) => b.members.length - a.members.length)
+    .slice(0, 20);
+}
+
+/** What a non-member may see of a chat: only possible for public chats
+ * (rules deny the read for private ones, which is reported as `null`). */
+export async function getChatPreview(chatId: string, myUid: string): Promise<ChatSummary | null | "private"> {
+  try {
+    const snap = await getDoc(doc(db, "chats", chatId));
+    return snap.exists() ? mapChat(snap, myUid) : null;
+  } catch {
+    return "private";
+  }
+}
+
+/** Joins a group/channel yourself: allowed by the rules for public chats, and
+ * for private ones only when `inviteCode` matches the chat's own code. */
+export async function joinChat(me: User, chatId: string, inviteCode?: string | null): Promise<void> {
+  try {
+    await updateDoc(doc(db, "chats", chatId), {
+      memberUids: arrayUnion(me.id),
+      [`memberProfiles.${me.id}`]: { ...toMemberProfile(me), ...(inviteCode ? { joinCode: inviteCode } : {}) },
+    });
+  } catch {
+    throw new DataError("Не вдалося приєднатися — посилання недійсне або чат закритий");
+  }
+  // a newcomer starts "caught up", the earlier history is not an unread pile
+  await markChatRead(chatId, me.id);
+}
+
+/** Admin-only: makes a group/channel public (searchable, anyone can join) or
+ * private (link only). Going private makes sure there is an invite code. */
+export async function setChatPublic(chat: ChatSummary, isPublic: boolean): Promise<void> {
+  await updateDoc(doc(db, "chats", chat.id), {
+    isPublic,
+    ...(!isPublic && !chat.inviteCode ? { inviteCode: newInviteCode() } : {}),
+  });
+}
+
+/** Admin-only: replaces the invite code, so every previously shared link stops working. */
+export async function resetInviteCode(chatId: string): Promise<void> {
+  await updateDoc(doc(db, "chats", chatId), { inviteCode: newInviteCode() });
 }
 
 /**
@@ -732,18 +809,24 @@ export function subscribeMessages(chatId: string, cb: (messages: ChatMessage[]) 
   // includeMetadataChanges: fires again when a queued write is acknowledged,
   // so ⏳ turns into ✓. "estimate" gives a pending serverTimestamp a local
   // time instead of null, so the message keeps its place in the list.
-  return onSnapshot(qy, { includeMetadataChanges: true }, (snap) => {
-    cb(
-      snap.docs
-        .map((d) => {
-          // pending = this message itself is still unacknowledged (its
-          // serverTimestamp is unresolved), not just e.g. a fresh reaction on it
-          const pending = d.metadata.hasPendingWrites && d.data().createdAt == null;
-          return mapMessage({ id: d.id, data: () => d.data({ serverTimestamps: "estimate" }) }, chatId, pending);
-        })
-        .reverse()
-    );
-  });
+  return onSnapshot(
+    qy,
+    { includeMetadataChanges: true },
+    (snap) => {
+      cb(
+        snap.docs
+          .map((d) => {
+            // pending = this message itself is still unacknowledged (its
+            // serverTimestamp is unresolved), not just e.g. a fresh reaction on it
+            const pending = d.metadata.hasPendingWrites && d.data().createdAt == null;
+            return mapMessage({ id: d.id, data: () => d.data({ serverTimestamps: "estimate" }) }, chatId, pending);
+          })
+          .reverse()
+      );
+    },
+    // e.g. kicked out of the chat while it is open: show it empty, not "loading" forever
+    () => cb([])
+  );
 }
 
 export interface SendExtras {
@@ -859,9 +942,28 @@ export async function editMessage(
 }
 
 /** Deletes a message. Firestore rules allow this for the message's own
- * sender, or the site admin deleting anywhere as moderation. */
-export async function deleteMessage(chatId: string, messageId: string): Promise<void> {
+ * sender, the chat's admins, or the site admin deleting anywhere as moderation.
+ * `newLast` is what the chat list preview should show afterwards when the
+ * deleted message was the newest one (`null` = the chat is now empty); leave
+ * it `undefined` when the preview does not change. */
+export async function deleteMessage(
+  chatId: string,
+  messageId: string,
+  newLast?: { type: "text" | "image" | "poll"; content: string; senderId: string; createdAt: string } | null
+): Promise<void> {
   await deleteDoc(doc(db, "chats", chatId, "messages", messageId));
+  if (newLast === undefined) return;
+  // Best effort and separate from the delete: a moderator who is not a member
+  // of the chat may delete but not touch the chat document.
+  await updateDoc(doc(db, "chats", chatId), {
+    lastMessage: newLast
+      ? {
+          content: lastMessagePreview(newLast.type, newLast.content),
+          senderUid: newLast.senderId,
+          createdAt: Timestamp.fromDate(new Date(newLast.createdAt)),
+        }
+      : null,
+  }).catch(() => {});
 }
 
 /* ---------------- typing indicator ---------------- */
@@ -878,15 +980,41 @@ export async function setTyping(chatId: string, uid: string, username: string, i
 }
 
 export function subscribeTyping(chatId: string, myUid: string, cb: (usernames: string[]) => void) {
-  return onSnapshot(collection(db, "chats", chatId, "typing"), (snap) => {
+  let entries: { username: string; at: number }[] = [];
+  let last: string | null = null;
+
+  // Re-evaluated on a timer as well as on every snapshot: someone who stops
+  // typing (or drops offline) produces no new snapshot, so without this the
+  // "typing…" label would stay on forever.
+  const emit = () => {
     const now = Date.now();
-    const names = snap.docs
-      .filter((d) => d.id !== myUid)
-      .map((d) => d.data() as { username: string; updatedAt: Timestamp | null })
-      .filter((t) => t.updatedAt && now - t.updatedAt.toDate().getTime() < TYPING_TTL_MS)
-      .map((t) => t.username);
+    const names = entries.filter((e) => now - e.at < TYPING_TTL_MS).map((e) => e.username);
+    const key = names.join("\n");
+    if (key === last) return;
+    last = key;
     cb(names);
-  });
+  };
+
+  const timer = window.setInterval(emit, 1000);
+  const unsub = onSnapshot(
+    collection(db, "chats", chatId, "typing"),
+    (snap) => {
+      entries = snap.docs
+        .filter((d) => d.id !== myUid)
+        .map((d) => d.data() as { username: string; updatedAt: Timestamp | null })
+        .filter((t) => t.updatedAt)
+        .map((t) => ({ username: t.username, at: t.updatedAt!.toDate().getTime() }));
+      emit();
+    },
+    () => {
+      entries = [];
+      emit();
+    }
+  );
+  return () => {
+    window.clearInterval(timer);
+    unsub();
+  };
 }
 
 /* ---------------- wallet ---------------- */
@@ -907,11 +1035,14 @@ function mapTx(snap: { id: string; data: () => Record<string, unknown> }): Walle
 
 export function subscribeTransactions(uid: string, cb: (txs: WalletTransaction[]) => void) {
   const qy = query(collection(db, "users", uid, "transactions"), orderBy("createdAt", "desc"), limit(50));
-  return onSnapshot(qy, (snap) => cb(snap.docs.map(mapTx)));
+  return onSnapshot(qy, (snap) => cb(snap.docs.map(mapTx)), () => cb([]));
 }
 
 export async function transferGrams(fromUid: string, fromUsername: string, toUsername: string, amount: number, note: string | null) {
   return onlineOnly(async () => {
+    if (!Number.isInteger(amount) || amount < 1 || amount > 1_000_000) {
+      throw new DataError("Вкажи цілу суму від 1 до 1 000 000 ГРАМ");
+    }
     const toUsernameLower = normalizeUsername(toUsername);
     const unameSnap = await getDoc(doc(db, "usernames", toUsernameLower));
     if (!unameSnap.exists()) throw new DataError("Отримувача не знайдено");

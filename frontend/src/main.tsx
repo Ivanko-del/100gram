@@ -7,11 +7,12 @@ import { AuthProvider } from "./context/AuthContext";
 import { ChatLockProvider } from "./context/ChatLockContext";
 import ErrorBoundary from "./components/ErrorBoundary";
 import OfflineBanner from "./components/OfflineBanner";
-import { applyPrefs } from "./utils/prefs";
+import { applyPrefs, watchBattery } from "./utils/prefs";
 import "./styles/index.css";
 
 document.documentElement.dataset.theme = localStorage.getItem("stogram_theme") ?? "dark";
 applyPrefs();
+watchBattery();
 
 // `immediate: true` checks for a new service worker on load; combined with
 // skipWaiting/clientsClaim (vite.config.ts) the new version takes over and

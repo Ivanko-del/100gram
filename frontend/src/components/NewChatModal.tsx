@@ -1,7 +1,9 @@
 import { FormEvent, KeyboardEvent, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { DataError, createGroupChat, searchUserByPhone, searchUsers, startDirectChat } from "../data/firestore-api";
 import { looksLikePhone, normalizePhone } from "../utils/phone";
 import { useAuth } from "../context/AuthContext";
+import { usePublicChatSearch } from "../hooks/usePublicChatSearch";
 import { PublicUser } from "../types";
 import Avatar from "./Avatar";
 
@@ -16,7 +18,9 @@ type Mode = "direct" | "group" | "channel";
 
 export default function NewChatModal({ contacts = [], onClose, onCreated }: Props) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>("direct");
+  const [isPublic, setIsPublic] = useState(false);
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PublicUser[]>([]);
@@ -25,6 +29,10 @@ export default function NewChatModal({ contacts = [], onClose, onCreated }: Prop
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
+  const { results: publicChats, searching: searchingChats } = usePublicChatSearch(
+    mode === "direct" ? query : "",
+    user?.id
+  );
 
   useEffect(() => {
     const q = query.trim();
@@ -101,7 +109,8 @@ export default function NewChatModal({ contacts = [], onClose, onCreated }: Prop
         user,
         name,
         selected.map((s) => s.username),
-        mode === "channel"
+        mode === "channel",
+        isPublic
       );
       onCreated(chatId);
     } catch (err) {
@@ -177,6 +186,25 @@ export default function NewChatModal({ contacts = [], onClose, onCreated }: Prop
             </>
           )}
 
+          {q.length >= 2 && (searchingChats || publicChats.length > 0) && (
+            <>
+              <div className="newchat-section-title">{searchingChats ? "Шукаємо групи й канали…" : "Публічні групи та канали"}</div>
+              <div className="newchat-card">
+                {publicChats.map((c) => (
+                  <button type="button" key={c.id} className="newchat-row" onClick={() => navigate(`/join/${c.id}`)}>
+                    <Avatar name={c.name} color={c.avatarColor} photoUrl={c.avatarUrl} size={48} />
+                    <div className="newchat-row-body">
+                      <div className="newchat-row-name">{c.name}</div>
+                      <div className="newchat-row-sub">
+                        {c.isChannel ? "Канал" : "Група"} · {c.members.length} {c.isChannel ? "підписників" : "учасників"}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
           <div className="newchat-section-title">Контакти</div>
           <div className="newchat-card">
             {matchedContacts.length === 0 && (
@@ -204,6 +232,29 @@ export default function NewChatModal({ contacts = [], onClose, onCreated }: Prop
             Назва
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder={mode === "channel" ? "Новини проєкту" : "Друзі 🥃"} maxLength={64} />
           </label>
+
+          <div className="visibility-picker" role="radiogroup" aria-label="Видимість">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!isPublic}
+              className={`visibility-option ${!isPublic ? "selected" : ""}`}
+              onClick={() => setIsPublic(false)}
+            >
+              <span className="visibility-title">🔒 Приватний</span>
+              <span className="visibility-sub">Вступити можна лише за посиланням-запрошенням</span>
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={isPublic}
+              className={`visibility-option ${isPublic ? "selected" : ""}`}
+              onClick={() => setIsPublic(true)}
+            >
+              <span className="visibility-title">🌐 Публічний</span>
+              <span className="visibility-sub">Знаходиться в пошуку, будь-хто може вступити сам</span>
+            </button>
+          </div>
 
           <label>
             {mode === "channel" ? "Підписники" : "Учасники"}
