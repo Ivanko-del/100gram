@@ -80,6 +80,31 @@ service cloud.firestore {
       }
     }
 
+    // User reports. One document per (reporter, target, message) - the id is
+    // forced by the rules, so a repeat report hits an existing doc, becomes
+    // an `update`, and is denied to everyone but the site admin. That is the
+    // anti-spam: no Cloud Functions needed.
+    match /reports/{reportId} {
+      function reportOk() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['reporterUid', 'targetUid', 'chatId', 'messageId', 'messageText', 'reason', 'comment', 'createdAt', 'status'])
+          && d.keys().hasAll(['reporterUid', 'targetUid', 'reason', 'createdAt', 'status'])
+          && d.reporterUid == request.auth.uid
+          && d.targetUid is string && d.targetUid.size() > 0
+          && d.reporterUid != d.targetUid
+          && d.reason in ['spam', 'abuse', 'scam', 'illegal', 'other']
+          && d.status == 'open'
+          && d.createdAt == request.time
+          && (!('chatId' in d) || (d.chatId is string && d.chatId.size() <= 200))
+          && (!('messageId' in d) || (d.messageId is string && d.messageId.size() > 0 && d.messageId.size() <= 200))
+          && (!('messageText' in d) || (d.messageText is string && d.messageText.size() <= 500))
+          && (!('comment' in d) || (d.comment is string && d.comment.size() <= 500))
+          && reportId == d.reporterUid + '_' + d.targetUid + '_' + d.get('messageId', 'user');
+      }
+      allow create: if isSignedIn() && reportOk();
+      allow read, update, delete: if isSiteAdmin();
+    }
+
     match /chats/{chatId} {
       function chatData() {
         return get(/databases/$(database)/documents/chats/$(chatId)).data;
@@ -114,6 +139,13 @@ service cloud.firestore {
         return !request.resource.data.diff(resource.data).affectedKeys().hasAny(["readBy"])
           || request.resource.data.readBy.diff(resource.data.get('readBy', {})).affectedKeys().hasOnly([request.auth.uid]);
       }
+      // `deliveredTo` is the same shape as `readBy` (uid -> when that member's
+      // client received the latest message); a member may only touch their
+      // OWN entry.
+      function deliveredToChangeOk() {
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(["deliveredTo"])
+          || request.resource.data.deliveredTo.diff(resource.data.get('deliveredTo', {})).affectedKeys().hasOnly([request.auth.uid]);
+      }
       // Leaving yourself: your uid disappears from memberUids/adminUids and
       // nothing else about the member list changes.
       function isSelfLeave() {
@@ -128,9 +160,10 @@ service cloud.firestore {
       allow update: if isSignedIn() && request.auth.uid in resource.data.memberUids
         && (
           // any member may bump the "last message" preview when sending and
-          // mark the chat read for themselves
-          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(["updatedAt", "lastMessage", "readBy"])
-            && readByChangeOk())
+          // mark the chat read / delivered for themselves
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(["updatedAt", "lastMessage", "readBy", "deliveredTo"])
+            && readByChangeOk()
+            && deliveredToChangeOk())
           // any member may invite more people into a plain group; channels
           // need admin rights even just to invite
           || (resource.data.isChannel != true && isMemberAddition())
