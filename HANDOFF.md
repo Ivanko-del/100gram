@@ -3,6 +3,14 @@
 Нотатка для наступної Claude-сесії (або для себе), що саме лишилось
 незакінченим. Гілка: `claude/telegram-100-gram-clone-fuadhq`.
 
+## Клікабельні @згадки
+
+`@username` у тексті повідомлення тепер кнопка (`components/MentionLink.tsx`): клік
+шукає людину за `usernames/{username}` -> `users/{uid}` (`data/user-lookup.ts`, кеш 60 с)
+і відкриває `UserProfileModal`; наведення показує картку (імʼя, @username, bio).
+Немає такої людини - помилка "Користувача @x не знайдено". `renderWithMentions`
+приймає необовʼязковий renderer; `name@site.com` більше не вважається згадкою.
+
 ## Дизайн v2 ("технологічний")
 
 Весь шар в кінці `frontend/src/styles/index.css` (блок "Design v2") - перекриває

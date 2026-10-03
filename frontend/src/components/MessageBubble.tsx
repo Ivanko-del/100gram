@@ -20,6 +20,7 @@ import { MAX_MESSAGE_LENGTH, REACTIONS_FREE, REACTIONS_PREMIUM } from "../consta
 import { ChatMessage } from "../types";
 import { renderWithMentions } from "../utils/mentions";
 import UserName from "./UserName";
+import MentionLink from "./MentionLink";
 
 interface Props {
   message: ChatMessage;
@@ -44,6 +45,10 @@ interface Props {
   isPinned?: boolean;
   onPin?: (message: ChatMessage) => void;
   onUnpin?: () => void;
+  /** a @username in the text was clicked and resolved to this user id */
+  onMentionOpen?: (uid: string) => void;
+  /** a @username in the text belongs to nobody */
+  onMentionMissing?: (username: string) => void;
 }
 
 function formatTime(iso: string) {
@@ -70,6 +75,8 @@ export default function MessageBubble({
   isPinned,
   onPin,
   onUnpin,
+  onMentionOpen,
+  onMentionMissing,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -170,7 +177,9 @@ export default function MessageBubble({
           </form>
         ) : (
           <div className="message-content">
-            {renderWithMentions(message.content)}
+            {renderWithMentions(message.content, (token, key) => (
+              <MentionLink key={key} token={token} onOpen={onMentionOpen} onMissing={onMentionMissing} />
+            ))}
             {message.editedAt && <span className="message-edited"> (ред.)</span>}
           </div>
         )}

@@ -446,6 +446,8 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
               isPinned={chat.pinnedMessageId === m.id}
               onPin={handlePin}
               onUnpin={handleUnpin}
+              onMentionOpen={setProfileUid}
+              onMentionMissing={(name) => setSendError(`Користувача @${name} не знайдено`)}
             />
           );
         })}

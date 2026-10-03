@@ -10,13 +10,16 @@ const TOKEN_RE = new RegExp(`(${MENTION_SRC}|${URL_SRC})`, "g");
  * mentions in a highlighted span and URLs in a clickable link - purely
  * cosmetic/offline (no lookup against real members), so it works
  * retroactively on old messages without extra data on the message. */
-export function renderWithMentions(text: string): ReactNode {
+export function renderWithMentions(text: string, renderMention?: (token: string, key: number) => ReactNode): ReactNode {
   const parts = text.split(TOKEN_RE);
   if (parts.length <= 1) return text;
 
   return parts.map((part, i) => {
     if (!part) return null;
-    if (MENTION_RE.test(part)) {
+    // "name@site.com" is an e-mail address, not a mention: a mention must not
+    // directly follow a letter, digit or underscore
+    if (MENTION_RE.test(part) && !/\w$/.test(parts[i - 1] ?? "")) {
+      if (renderMention) return renderMention(part, i);
       return (
         <span className="mention" key={i}>
           {part}
