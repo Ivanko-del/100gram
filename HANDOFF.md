@@ -3,7 +3,78 @@
 Нотатка для наступної Claude-сесії (або для себе), що саме лишилось
 незакінченим. Гілка: `claude/telegram-100-gram-clone-fuadhq`.
 
-## Додано цю сесію: пін повідомлень, опитування, @згадки
+## Додано останньою сесією: офлайн, статуси повідомлень, скарги
+
+Робоча гілка цієї сесії: `claude/100gram-offline-statuses-reports-8uno8t`
+(**не** злита в `main` - див. «Деплой і гілки», `main` і робоча гілка мають
+бути ідентичні; злити/fast-forward перед продовженням роботи).
+
+**⚠️ `firestore.rules` змінились - потрібен ручний Publish** (Firebase
+Console → Firestore → Rules → Publish). До публікації: «доставлено» не
+з'являється (запис `deliveredTo` мовчки ігнорує `permission-denied`), а
+скарги показують «Функція скарг ще вмикається». Решта працює.
+
+1. **Офлайн** (`firebase.ts`, `utils/offline.ts`, `OfflineBanner`,
+   `hooks/useOnlineStatus.ts`). `initializeFirestore` з
+   `persistentLocalCache({ tabManager: persistentMultipleTabManager() })`,
+   у try/catch з fallback на `getFirestore`. `assertOnline()`/`onlineOnly()`
+   у `firestore-api.ts` загортають `transferGrams`, `buyPremium`,
+   `grantPremiumFromAxioma`, `topUpGramsFromAxioma`, `setMyPhone`
+   (транзакції офлайн не працюють) і `loginUser` -> `DataError("Потрібен
+   інтернет")`. Оплата Аксіомою перевіряє мережу ДО списання з картки.
+   `useUnreadCounts` офлайн не викликає `getCountFromServer` (лишає
+   «щонайменше 1», нічого не кешує) і рахує точно після повернення мережі.
+   PWA service worker не чіпали: він кешує лише статику (Firebase-запити не
+   перехоплює), `ErrorBoundary` теж без змін.
+2. **Статуси** (`utils/messageStatus.ts`). ⏳ = `metadata.hasPendingWrites`
+   для самого повідомлення (`subscribeMessages` тепер з
+   `includeMetadataChanges` і `serverTimestamps: "estimate"`). «Доставлено»:
+   `ChatPage` через `needsDeliveryReceipt()` пише
+   `chats/{id}.deliveredTo.{myUid}` (`markChatDelivered`), коли у списку
+   чатів з'являється новіше чуже `lastMessage`; один запис на повідомлення
+   (Set-захист від ехо власного запису), пропуск, якщо чат відкритий і
+   вкладка видима (там працює `readBy`). Тільки DM (не групи/Збережене).
+   Прочитано має пріоритет над доставлено.
+3. **Скарги** (`utils/reports.ts`, `ReportModal`, `ReportsTab` в
+   `SettingsPage`). id документа = `${reporterUid}_${targetUid}_${messageId ??
+   "user"}`, правила його примушують, тому повторна скарга = `update`, який
+   дозволений тільки адміну. Користувачі скарги **не можуть читати**, тому
+   «Ви вже скаржились» береться з `localStorage` (`stogram_reported_<uid>`);
+   якщо запис впав із `permission-denied`, а локально сліду немає, це або
+   правила не опубліковані, або скаргу подано з іншого пристрою -
+   показується об'єднане повідомлення «ще вмикається (або ви вже
+   скаржились)». Розрізнити ці випадки без права читання неможливо.
+   «Закрити» ставить `status: "closed"` (документ лишається, тож повторно
+   поскаржитись на те саме не можна - свідомо). Список open-скарг
+   сортується на клієнті, щоб не вимагати composite-індекс.
+
+**Тести правил**: `frontend/rules-tests/firestore.rules.test.ts`, запуск
+`npm run test:rules` (`firebase-tools` через `npx`, Firestore-емулятор, Java).
+Емулятор у sandbox **запустився**, 16 тестів пройшли (deliveredTo: свій ключ
+так / чужий, не-учасник, змішування ключів - ні; reports: whitelist, enum,
+розміри, `createdAt == request.time`, id, повтор, читання лише адміном).
+Основний `npm run test` їх виключає (`vitest.config.ts`). Потрібен
+`@firebase/rules-unit-testing@^4` (v5 вимагає firebase 12).
+
+**Свідомо НЕ зроблено / обмеження**:
+- Живе тестування проти реального Firebase з sandbox неможливе - офлайн-черга,
+  persistentLocalCache у браузері, ⏳/✓✓ і UI скарг перевірені лише
+  lint/tsc/build/unit-тестами й емулятором правил; **руками в браузері не
+  перевірялось**. Ручна перевірка: (1) DevTools → Network → Offline: банер
+  з'являється/зникає, повідомлення стає ⏳ і після Online -> ✓; переказ
+  дає «Потрібен інтернет»; (2) після Publish правил: з акаунта B відкрити
+  список чатів, коли A надіслав повідомлення -> у A ✓✓ сірі, після
+  відкриття чату B - кольорові; (3) скарга з профілю/меню повідомлення, з
+  адмін-акаунта `@theivankoo` - Налаштування → «🚩 Скарги».
+- Статуси лише для DM, не для груп/каналів (як і просили).
+- Push-сповіщення, серверна модерація, авто-мут за кількістю скарг, фото-
+  скарги - потребують Cloud Functions/Storage (Blaze), не робили.
+- Скарги на повідомлення-фото зберігають порожній знімок (base64 не влізе в
+  ліміт 500 символів).
+- `deliveredTo` не перевіряє значення на `request.time` (як і `readBy`):
+  користувач може збрехати лише про власну доставку.
+
+## Додано раніше: пін повідомлень, опитування, @згадки
 
 Користувач попросив "додати штуки з Telegram і Discord, які добре
 доповнять 100 ГРАМ". Обрано три фічі, які реально бракувало (перевірено
@@ -126,7 +197,8 @@ republish-нути `firestore.rules` у Firebase Console, інакше пін і
 вставив вміст у Firebase Console → Firestore Database → Rules → Publish.
 Поточна версія (з `phones/{phone}`, `users/{uid}/private/{doc}` для
 pardon-на-чат) **підтверджена опублікованою** користувачем раніше.
-Цю сесію `firestore.rules` не редагували вручну — лише git-мердж з `main`
+(Остання сесія правила змінила - див. верх файлу, потрібен новий Publish.)
+Попередню сесію `firestore.rules` не редагували вручну — лише git-мердж з `main`
 (без конфліктів), тому вміст не змінився відносно того, що вже на `main`.
 
 ## Деплой і гілки
