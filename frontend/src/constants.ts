@@ -18,6 +18,9 @@ export const PREMIUM_PLANS: PremiumPlan[] = [
 /** What premium actually unlocks (keep the perks list in Settings honest). */
 export const FREE_PIN_LIMIT = 3;
 export const PREMIUM_PIN_LIMIT = 10;
+export const FREE_FOLDER_LIMIT = 3;
+export const PREMIUM_FOLDER_LIMIT = 10;
+export const MAX_FOLDER_NAME = 20;
 export const FREE_BIO_LIMIT = 160;
 export const PREMIUM_BIO_LIMIT = 500;
 

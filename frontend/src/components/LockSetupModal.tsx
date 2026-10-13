@@ -34,7 +34,7 @@ export default function LockSetupModal({ onClose, onDone }: Props) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <form className="modal-card" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+      <form className="modal-card" role="dialog" aria-modal="true" aria-label="Пароль на чати" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
         <div className="modal-header">
           <h2>Пароль на чати</h2>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Закрити">

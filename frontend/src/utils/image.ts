@@ -26,6 +26,9 @@ export function compressImageToDataUrl(file: File, maxDim = 160, quality = 0.7, 
         reject(new DataError("Не вдалося обробити зображення"));
         return;
       }
+      // JPEG has no transparency: without this a transparent PNG turns black
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, w, h);
       ctx.drawImage(img, 0, 0, w, h);
 
       const dataUrl = canvas.toDataURL("image/jpeg", quality);

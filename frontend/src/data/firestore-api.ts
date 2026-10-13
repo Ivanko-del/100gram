@@ -39,9 +39,27 @@ import {
 import { auth, db } from "../firebase";
 import { AVATAR_COLORS, WELCOME_BONUS } from "../constants";
 import { clearChatLock } from "./chat-lock";
-import { ChatMessage, ChatSummary, PremiumPlan, PublicUser, User, UserBadge, WalletTransaction } from "../types";
+import { OFFLINE_MESSAGE, isOfflineError, isOnline } from "../utils/offline";
+import { ChatFolder, ChatMessage, ChatSummary, PremiumPlan, PublicUser, Report, User, UserBadge, WalletTransaction } from "../types";
+import { ReportReason, clipReportText, getReportedIds, isReportReason, reportDocId, rememberReported } from "../utils/reports";
 
 export class DataError extends Error {}
+
+/** Throws a readable "Потрібен інтернет" up front when offline - and also
+ * when the browser claims to be online but the server is unreachable. Use
+ * around transactions and payments, which cannot be queued offline. */
+export function assertOnline(): void {
+  if (!isOnline()) throw new DataError(OFFLINE_MESSAGE);
+}
+async function onlineOnly<T>(fn: () => Promise<T>): Promise<T> {
+  assertOnline();
+  try {
+    return await fn();
+  } catch (err) {
+    if (!(err instanceof DataError) && isOfflineError(err)) throw new DataError(OFFLINE_MESSAGE);
+    throw err;
+  }
+}
 
 /** Accepts "@olha" or "olha" alike - usernames are stored without the "@". */
 export function normalizeUsername(raw: string): string {
@@ -141,7 +159,13 @@ export async function finishRegistration(
 }
 
 export async function loginUser(email: string, password: string): Promise<void> {
-  await signInWithEmailAndPassword(auth, email.trim(), password);
+  assertOnline();
+  try {
+    await signInWithEmailAndPassword(auth, email.trim(), password);
+  } catch (err) {
+    if (isOfflineError(err)) throw new DataError(OFFLINE_MESSAGE);
+    throw err;
+  }
 }
 
 /** After a phone sign-in: a number that was never registered makes Firebase
@@ -178,18 +202,20 @@ export async function searchUserByPhone(phone: string, excludeUid: string): Prom
 /** Sets, changes or clears the phone on the signed-in account, keeping the
  * unique `phones/{digits}` reservation in step with it. */
 export async function setMyPhone(uid: string, oldPhone: string | null, newPhone: string | null): Promise<void> {
-  if (oldPhone === newPhone) return;
-  await runTransaction(db, async (tx) => {
-    if (newPhone) {
-      const ref = doc(db, "phones", newPhone);
-      const snap = await tx.get(ref);
-      if (snap.exists() && (snap.data() as { uid: string }).uid !== uid) {
-        throw new DataError("Цей номер телефону вже використовується");
+  return onlineOnly(async () => {
+    if (oldPhone === newPhone) return;
+    await runTransaction(db, async (tx) => {
+      if (newPhone) {
+        const ref = doc(db, "phones", newPhone);
+        const snap = await tx.get(ref);
+        if (snap.exists() && (snap.data() as { uid: string }).uid !== uid) {
+          throw new DataError("Цей номер телефону вже використовується");
+        }
+        tx.set(ref, { uid });
       }
-      tx.set(ref, { uid });
-    }
-    if (oldPhone) tx.delete(doc(db, "phones", oldPhone));
-    tx.update(doc(db, "users", uid), { phone: newPhone });
+      if (oldPhone) tx.delete(doc(db, "phones", oldPhone));
+      tx.update(doc(db, "users", uid), { phone: newPhone });
+    });
   });
 }
 
@@ -272,15 +298,19 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     pinnedChats: (d.pinnedChats as string[]) ?? [],
     archivedChats: (d.archivedChats as string[]) ?? [],
     hiddenChats: (d.hiddenChats as Record<string, string>) ?? {},
+    chatFolders: (d.chatFolders as ChatFolder[]) ?? [],
     badge: (d.badge as UserBadge) ?? null,
     showAdminBadge: !!d.showAdminBadge,
   };
 }
 
 export function subscribeUser(uid: string, cb: (user: User | null) => void) {
-  return onSnapshot(doc(db, "users", uid), (snap) => {
-    cb(snap.exists() ? mapUser(snap) : null);
-  });
+  return onSnapshot(
+    doc(db, "users", uid),
+    (snap) => cb(snap.exists() ? mapUser(snap) : null),
+    // a denied/failed listener must not leave the app on its loading screen
+    () => cb(null)
+  );
 }
 
 export async function updateProfile(
@@ -399,8 +429,13 @@ function mapChat(snap: { id: string; data: () => Record<string, unknown> }, myUi
     readBy: Object.fromEntries(
       Object.entries((d.readBy as Record<string, unknown>) ?? {}).map(([uid, ts]) => [uid, tsToIso(ts)])
     ),
+    deliveredTo: Object.fromEntries(
+      Object.entries((d.deliveredTo as Record<string, unknown>) ?? {}).map(([uid, ts]) => [uid, tsToIso(ts)])
+    ),
     updatedAt: d.updatedAt ? tsToIso(d.updatedAt) : tsToIso(d.createdAt),
     pinnedMessageId: (d.pinnedMessageId as string) ?? null,
+    isPublic: !!d.isPublic,
+    inviteCode: (d.inviteCode as string) ?? null,
   };
 }
 
@@ -442,6 +477,13 @@ export async function markChatRead(chatId: string, uid: string): Promise<void> {
   await updateDoc(doc(db, "chats", chatId), new FieldPath("readBy", uid), serverTimestamp()).catch(() => {});
 }
 
+/** Records that this user's client has received the chat's latest message
+ * (✓✓ grey for the sender). Silently ignored when rules deny it - e.g.
+ * before the updated firestore.rules are published. */
+export async function markChatDelivered(chatId: string, uid: string): Promise<void> {
+  await updateDoc(doc(db, "chats", chatId), new FieldPath("deliveredTo", uid), serverTimestamp()).catch(() => {});
+}
+
 /** How many messages arrived after `sinceIso` (server-side count, cheap). */
 export async function countMessagesSince(chatId: string, sinceIso: string): Promise<number> {
   const qy = query(collection(db, "chats", chatId, "messages"), where("createdAt", ">", Timestamp.fromDate(new Date(sinceIso))));
@@ -457,6 +499,11 @@ export async function setChatMutedForMe(uid: string, chatId: string, muted: bool
  * sounds. (Rules can't stop them from writing - it only mutes them for you.) */
 export async function setUserBlocked(uid: string, otherUid: string, blocked: boolean): Promise<void> {
   await updateDoc(doc(db, "users", uid), { blockedUids: blocked ? arrayUnion(otherUid) : arrayRemove(otherUid) });
+}
+
+/** Saves the user's chat-list folders (the whole list at once, it is small). */
+export async function setChatFolders(uid: string, folders: ChatFolder[]): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { chatFolders: folders });
 }
 
 /** Presence heartbeat - the timestamp other people's "last seen" is built from. */
@@ -494,11 +541,15 @@ export function subscribePublicProfile(uid: string, cb: (u: User | null) => void
 
 export function subscribeChats(myUid: string, cb: (chats: ChatSummary[]) => void) {
   const qy = query(collection(db, "chats"), where("memberUids", "array-contains", myUid));
-  return onSnapshot(qy, (snap) => {
-    const chats = snap.docs.map((d) => mapChat(d, myUid));
-    chats.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    cb(chats);
-  });
+  return onSnapshot(
+    qy,
+    (snap) => {
+      const chats = snap.docs.map((d) => mapChat(d, myUid));
+      chats.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      cb(chats);
+    },
+    () => cb([])
+  );
 }
 
 export async function startDirectChat(me: User, otherUsername: string): Promise<string> {
@@ -542,7 +593,8 @@ export async function createGroupChat(
   creator: User,
   name: string,
   memberUsernames: string[],
-  isChannel: boolean
+  isChannel: boolean,
+  isPublic = false
 ): Promise<string> {
   const trimmedName = name.trim();
   if (!trimmedName) throw new DataError("Вкажи назву");
@@ -574,11 +626,72 @@ export async function createGroupChat(
     memberUids,
     memberProfiles,
     adminUids: [creator.id],
+    isPublic,
+    // private chats are entered only through a link carrying this code
+    inviteCode: isPublic ? null : newInviteCode(),
     lastMessage: null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
   return chatId;
+}
+
+function newInviteCode(): string {
+  return crypto.randomUUID().replace(/-/g, "");
+}
+
+/** Public groups/channels whose name or description contains `queryText`.
+ * Firestore has no substring search, so this pulls the public chats (a
+ * single-field equality query, no composite index needed) and filters here. */
+export async function searchPublicChats(queryText: string, myUid: string): Promise<ChatSummary[]> {
+  const q = queryText.trim().toLowerCase().replace(/^@/, "");
+  if (q.length < 2) return [];
+  const snap = await getDocs(query(collection(db, "chats"), where("isPublic", "==", true), limit(200)));
+  return snap.docs
+    .map((d) => mapChat(d, myUid))
+    .filter((c) => c.name.toLowerCase().includes(q) || (c.description ?? "").toLowerCase().includes(q))
+    .sort((a, b) => b.members.length - a.members.length)
+    .slice(0, 20);
+}
+
+/** What a non-member may see of a chat: only possible for public chats
+ * (rules deny the read for private ones, which is reported as `null`). */
+export async function getChatPreview(chatId: string, myUid: string): Promise<ChatSummary | null | "private"> {
+  try {
+    const snap = await getDoc(doc(db, "chats", chatId));
+    return snap.exists() ? mapChat(snap, myUid) : null;
+  } catch {
+    return "private";
+  }
+}
+
+/** Joins a group/channel yourself: allowed by the rules for public chats, and
+ * for private ones only when `inviteCode` matches the chat's own code. */
+export async function joinChat(me: User, chatId: string, inviteCode?: string | null): Promise<void> {
+  try {
+    await updateDoc(doc(db, "chats", chatId), {
+      memberUids: arrayUnion(me.id),
+      [`memberProfiles.${me.id}`]: { ...toMemberProfile(me), ...(inviteCode ? { joinCode: inviteCode } : {}) },
+    });
+  } catch {
+    throw new DataError("Не вдалося приєднатися — посилання недійсне або чат закритий");
+  }
+  // a newcomer starts "caught up", the earlier history is not an unread pile
+  await markChatRead(chatId, me.id);
+}
+
+/** Admin-only: makes a group/channel public (searchable, anyone can join) or
+ * private (link only). Going private makes sure there is an invite code. */
+export async function setChatPublic(chat: ChatSummary, isPublic: boolean): Promise<void> {
+  await updateDoc(doc(db, "chats", chat.id), {
+    isPublic,
+    ...(!isPublic && !chat.inviteCode ? { inviteCode: newInviteCode() } : {}),
+  });
+}
+
+/** Admin-only: replaces the invite code, so every previously shared link stops working. */
+export async function resetInviteCode(chatId: string): Promise<void> {
+  await updateDoc(doc(db, "chats", chatId), { inviteCode: newInviteCode() });
 }
 
 /**
@@ -663,7 +776,7 @@ export async function pinMessage(chatId: string, messageId: string | null): Prom
 
 /* ---------------- messages ---------------- */
 
-function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, chatId: string): ChatMessage {
+function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, chatId: string, pending = false): ChatMessage {
   const d = snap.data();
   const rawPoll = d.poll as { question: string; options: string[]; votes?: Record<string, string[]> } | undefined;
   return {
@@ -672,6 +785,7 @@ function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, c
     content: d.content as string,
     type: d.type === "image" ? "image" : d.type === "poll" ? "poll" : "text",
     createdAt: tsToIso(d.createdAt),
+    pending,
     sender: {
       id: d.senderUid as string,
       username: (d.senderUsername as string) ?? "",
@@ -692,9 +806,27 @@ function mapMessage(snap: { id: string; data: () => Record<string, unknown> }, c
  * to reveal older history. */
 export function subscribeMessages(chatId: string, cb: (messages: ChatMessage[]) => void, count = 60) {
   const qy = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "desc"), limit(count));
-  return onSnapshot(qy, (snap) => {
-    cb(snap.docs.map((d) => mapMessage(d, chatId)).reverse());
-  });
+  // includeMetadataChanges: fires again when a queued write is acknowledged,
+  // so ⏳ turns into ✓. "estimate" gives a pending serverTimestamp a local
+  // time instead of null, so the message keeps its place in the list.
+  return onSnapshot(
+    qy,
+    { includeMetadataChanges: true },
+    (snap) => {
+      cb(
+        snap.docs
+          .map((d) => {
+            // pending = this message itself is still unacknowledged (its
+            // serverTimestamp is unresolved), not just e.g. a fresh reaction on it
+            const pending = d.metadata.hasPendingWrites && d.data().createdAt == null;
+            return mapMessage({ id: d.id, data: () => d.data({ serverTimestamps: "estimate" }) }, chatId, pending);
+          })
+          .reverse()
+      );
+    },
+    // e.g. kicked out of the chat while it is open: show it empty, not "loading" forever
+    () => cb([])
+  );
 }
 
 export interface SendExtras {
@@ -810,9 +942,28 @@ export async function editMessage(
 }
 
 /** Deletes a message. Firestore rules allow this for the message's own
- * sender, or the site admin deleting anywhere as moderation. */
-export async function deleteMessage(chatId: string, messageId: string): Promise<void> {
+ * sender, the chat's admins, or the site admin deleting anywhere as moderation.
+ * `newLast` is what the chat list preview should show afterwards when the
+ * deleted message was the newest one (`null` = the chat is now empty); leave
+ * it `undefined` when the preview does not change. */
+export async function deleteMessage(
+  chatId: string,
+  messageId: string,
+  newLast?: { type: "text" | "image" | "poll"; content: string; senderId: string; createdAt: string } | null
+): Promise<void> {
   await deleteDoc(doc(db, "chats", chatId, "messages", messageId));
+  if (newLast === undefined) return;
+  // Best effort and separate from the delete: a moderator who is not a member
+  // of the chat may delete but not touch the chat document.
+  await updateDoc(doc(db, "chats", chatId), {
+    lastMessage: newLast
+      ? {
+          content: lastMessagePreview(newLast.type, newLast.content),
+          senderUid: newLast.senderId,
+          createdAt: Timestamp.fromDate(new Date(newLast.createdAt)),
+        }
+      : null,
+  }).catch(() => {});
 }
 
 /* ---------------- typing indicator ---------------- */
@@ -829,15 +980,41 @@ export async function setTyping(chatId: string, uid: string, username: string, i
 }
 
 export function subscribeTyping(chatId: string, myUid: string, cb: (usernames: string[]) => void) {
-  return onSnapshot(collection(db, "chats", chatId, "typing"), (snap) => {
+  let entries: { username: string; at: number }[] = [];
+  let last: string | null = null;
+
+  // Re-evaluated on a timer as well as on every snapshot: someone who stops
+  // typing (or drops offline) produces no new snapshot, so without this the
+  // "typing…" label would stay on forever.
+  const emit = () => {
     const now = Date.now();
-    const names = snap.docs
-      .filter((d) => d.id !== myUid)
-      .map((d) => d.data() as { username: string; updatedAt: Timestamp | null })
-      .filter((t) => t.updatedAt && now - t.updatedAt.toDate().getTime() < TYPING_TTL_MS)
-      .map((t) => t.username);
+    const names = entries.filter((e) => now - e.at < TYPING_TTL_MS).map((e) => e.username);
+    const key = names.join("\n");
+    if (key === last) return;
+    last = key;
     cb(names);
-  });
+  };
+
+  const timer = window.setInterval(emit, 1000);
+  const unsub = onSnapshot(
+    collection(db, "chats", chatId, "typing"),
+    (snap) => {
+      entries = snap.docs
+        .filter((d) => d.id !== myUid)
+        .map((d) => d.data() as { username: string; updatedAt: Timestamp | null })
+        .filter((t) => t.updatedAt)
+        .map((t) => ({ username: t.username, at: t.updatedAt!.toDate().getTime() }));
+      emit();
+    },
+    () => {
+      entries = [];
+      emit();
+    }
+  );
+  return () => {
+    window.clearInterval(timer);
+    unsub();
+  };
 }
 
 /* ---------------- wallet ---------------- */
@@ -858,51 +1035,58 @@ function mapTx(snap: { id: string; data: () => Record<string, unknown> }): Walle
 
 export function subscribeTransactions(uid: string, cb: (txs: WalletTransaction[]) => void) {
   const qy = query(collection(db, "users", uid, "transactions"), orderBy("createdAt", "desc"), limit(50));
-  return onSnapshot(qy, (snap) => cb(snap.docs.map(mapTx)));
+  return onSnapshot(qy, (snap) => cb(snap.docs.map(mapTx)), () => cb([]));
 }
 
 export async function transferGrams(fromUid: string, fromUsername: string, toUsername: string, amount: number, note: string | null) {
-  const toUsernameLower = normalizeUsername(toUsername);
-  const unameSnap = await getDoc(doc(db, "usernames", toUsernameLower));
-  if (!unameSnap.exists()) throw new DataError("Отримувача не знайдено");
-  const toUid = (unameSnap.data() as { uid: string }).uid;
-  if (toUid === fromUid) throw new DataError("Не можна переказати собі");
+  return onlineOnly(async () => {
+    if (!Number.isInteger(amount) || amount < 1 || amount > 1_000_000) {
+      throw new DataError("Вкажи цілу суму від 1 до 1 000 000 ГРАМ");
+    }
+    const toUsernameLower = normalizeUsername(toUsername);
+    const unameSnap = await getDoc(doc(db, "usernames", toUsernameLower));
+    if (!unameSnap.exists()) throw new DataError("Отримувача не знайдено");
+    const toUid = (unameSnap.data() as { uid: string }).uid;
+    if (toUid === fromUid) throw new DataError("Не можна переказати собі");
 
-  await runTransaction(db, async (tx) => {
-    const fromRef = doc(db, "users", fromUid);
-    const toRef = doc(db, "users", toUid);
-    const fromSnap = await tx.get(fromRef);
-    const toSnap = await tx.get(toRef);
-    if (!fromSnap.exists() || !toSnap.exists()) throw new DataError("Помилка гаманця");
-    const fromData = fromSnap.data() as { grams: number };
-    const toData = toSnap.data() as { grams: number; username: string };
-    if (fromData.grams < amount) throw new DataError("Недостатньо ГРАМів");
+    await runTransaction(db, async (tx) => {
+      const fromRef = doc(db, "users", fromUid);
+      const toRef = doc(db, "users", toUid);
+      const fromSnap = await tx.get(fromRef);
+      const toSnap = await tx.get(toRef);
+      if (!fromSnap.exists() || !toSnap.exists()) throw new DataError("Помилка гаманця");
+      const fromData = fromSnap.data() as { grams: number };
+      const toData = toSnap.data() as { grams: number; username: string };
+      if (fromData.grams < amount) throw new DataError("Недостатньо ГРАМів");
 
-    tx.update(fromRef, { grams: fromData.grams - amount });
-    tx.update(toRef, { grams: toData.grams + amount });
+      tx.update(fromRef, { grams: fromData.grams - amount });
+      tx.update(toRef, { grams: toData.grams + amount });
 
-    const fromTxRef = doc(collection(fromRef, "transactions"));
-    const toTxRef = doc(collection(toRef, "transactions"));
-    tx.set(fromTxRef, { amount: -amount, type: "transfer", note, counterpart: toUid, counterpartUsername: toData.username, createdAt: serverTimestamp() });
-    tx.set(toTxRef, { amount, type: "transfer", note, counterpart: fromUid, counterpartUsername: fromUsername, createdAt: serverTimestamp() });
+      const fromTxRef = doc(collection(fromRef, "transactions"));
+      const toTxRef = doc(collection(toRef, "transactions"));
+      tx.set(fromTxRef, { amount: -amount, type: "transfer", note, counterpart: toUid, counterpartUsername: toData.username, createdAt: serverTimestamp() });
+      tx.set(toTxRef, { amount, type: "transfer", note, counterpart: fromUid, counterpartUsername: fromUsername, createdAt: serverTimestamp() });
+    });
   });
 }
 
 export async function buyPremium(uid: string, plan: PremiumPlan) {
-  await runTransaction(db, async (tx) => {
-    const ref = doc(db, "users", uid);
-    const snap = await tx.get(ref);
-    if (!snap.exists()) throw new DataError("Помилка гаманця");
-    const data = snap.data() as { grams: number; premiumUntil: Timestamp | null };
-    if (data.grams < plan.price) throw new DataError("Недостатньо ГРАМів");
+  return onlineOnly(async () => {
+    await runTransaction(db, async (tx) => {
+      const ref = doc(db, "users", uid);
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new DataError("Помилка гаманця");
+      const data = snap.data() as { grams: number; premiumUntil: Timestamp | null };
+      if (data.grams < plan.price) throw new DataError("Недостатньо ГРАМів");
 
-    const now = new Date();
-    const base = data.premiumUntil && data.premiumUntil.toDate() > now ? data.premiumUntil.toDate() : now;
-    const premiumUntil = new Date(base.getTime() + plan.days * 24 * 60 * 60 * 1000);
+      const now = new Date();
+      const base = data.premiumUntil && data.premiumUntil.toDate() > now ? data.premiumUntil.toDate() : now;
+      const premiumUntil = new Date(base.getTime() + plan.days * 24 * 60 * 60 * 1000);
 
-    tx.update(ref, { grams: data.grams - plan.price, isPremium: true, premiumUntil: Timestamp.fromDate(premiumUntil) });
-    const txRef = doc(collection(ref, "transactions"));
-    tx.set(txRef, { amount: -plan.price, type: "premium_purchase", note: `Преміум: ${plan.label}`, counterpart: null, counterpartUsername: null, createdAt: serverTimestamp() });
+      tx.update(ref, { grams: data.grams - plan.price, isPremium: true, premiumUntil: Timestamp.fromDate(premiumUntil) });
+      const txRef = doc(collection(ref, "transactions"));
+      tx.set(txRef, { amount: -plan.price, type: "premium_purchase", note: `Преміум: ${plan.label}`, counterpart: null, counterpartUsername: null, createdAt: serverTimestamp() });
+    });
   });
 }
 
@@ -911,43 +1095,133 @@ export async function buyPremium(uid: string, plan: PremiumPlan) {
 /** Credits ГРАМ after a successful `withdrawFromAxioma` - call this only
  * once the Аксіома card debit has actually gone through. */
 export async function topUpGramsFromAxioma(uid: string, grams: number, axiomaAmount: number): Promise<void> {
-  const ref = doc(db, "users", uid);
-  const txRef = doc(collection(ref, "transactions"));
-  const batch = writeBatch(db);
-  batch.update(ref, { grams: increment(grams) });
-  batch.set(txRef, {
-    amount: grams,
-    type: "axioma_topup",
-    note: `Поповнення з картки Аксіоми (${axiomaAmount} ₴)`,
-    counterpart: null,
-    counterpartUsername: null,
-    createdAt: serverTimestamp(),
+  return onlineOnly(async () => {
+    const ref = doc(db, "users", uid);
+    const txRef = doc(collection(ref, "transactions"));
+    const batch = writeBatch(db);
+    batch.update(ref, { grams: increment(grams) });
+    batch.set(txRef, {
+      amount: grams,
+      type: "axioma_topup",
+      note: `Поповнення з картки Аксіоми (${axiomaAmount} ₴)`,
+      counterpart: null,
+      counterpartUsername: null,
+      createdAt: serverTimestamp(),
+    });
+    await batch.commit();
   });
-  await batch.commit();
 }
 
 /** Grants premium paid for directly with the Аксіома card - no ГРАМ change,
  * call only once the Аксіома card debit has actually gone through. */
 export async function grantPremiumFromAxioma(uid: string, plan: PremiumPlan): Promise<void> {
-  await runTransaction(db, async (tx) => {
-    const ref = doc(db, "users", uid);
-    const snap = await tx.get(ref);
-    if (!snap.exists()) throw new DataError("Помилка гаманця");
-    const data = snap.data() as { premiumUntil: Timestamp | null };
+  return onlineOnly(async () => {
+    await runTransaction(db, async (tx) => {
+      const ref = doc(db, "users", uid);
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new DataError("Помилка гаманця");
+      const data = snap.data() as { premiumUntil: Timestamp | null };
 
-    const now = new Date();
-    const base = data.premiumUntil && data.premiumUntil.toDate() > now ? data.premiumUntil.toDate() : now;
-    const premiumUntil = new Date(base.getTime() + plan.days * 24 * 60 * 60 * 1000);
+      const now = new Date();
+      const base = data.premiumUntil && data.premiumUntil.toDate() > now ? data.premiumUntil.toDate() : now;
+      const premiumUntil = new Date(base.getTime() + plan.days * 24 * 60 * 60 * 1000);
 
-    tx.update(ref, { isPremium: true, premiumUntil: Timestamp.fromDate(premiumUntil) });
-    const txRef = doc(collection(ref, "transactions"));
-    tx.set(txRef, {
-      amount: 0,
-      type: "premium_purchase_axioma",
-      note: `Преміум карткою Аксіоми: ${plan.label}`,
-      counterpart: null,
-      counterpartUsername: null,
-      createdAt: serverTimestamp(),
+      tx.update(ref, { isPremium: true, premiumUntil: Timestamp.fromDate(premiumUntil) });
+      const txRef = doc(collection(ref, "transactions"));
+      tx.set(txRef, {
+        amount: 0,
+        type: "premium_purchase_axioma",
+        note: `Преміум карткою Аксіоми: ${plan.label}`,
+        counterpart: null,
+        counterpartUsername: null,
+        createdAt: serverTimestamp(),
+      });
     });
   });
+}
+
+/* ---------------- reports ---------------- */
+
+/** `already`: this exact report exists. `unavailable`: rules denied it and we
+ * can't tell why (reports are unreadable for users) - most likely the
+ * updated firestore.rules are not published yet. */
+export class ReportError extends DataError {
+  constructor(public kind: "already" | "unavailable", message: string) {
+    super(message);
+  }
+}
+
+export function hasReported(reporterUid: string, targetUid: string, messageId?: string | null): boolean {
+  return getReportedIds(reporterUid).includes(reportDocId(reporterUid, targetUid, messageId));
+}
+
+export interface ReportInput {
+  reporterUid: string;
+  targetUid: string;
+  reason: ReportReason;
+  comment?: string;
+  chatId?: string;
+  messageId?: string;
+  /** snapshot of the reported message text at the moment of the report */
+  messageText?: string;
+}
+
+export async function submitReport(input: ReportInput): Promise<void> {
+  if (!isReportReason(input.reason)) throw new DataError("Обери причину скарги");
+  const id = reportDocId(input.reporterUid, input.targetUid, input.messageId);
+  if (hasReported(input.reporterUid, input.targetUid, input.messageId)) {
+    throw new ReportError("already", "Ви вже скаржились");
+  }
+  const comment = input.comment?.trim();
+  const messageText = input.messageText?.trim();
+  try {
+    await onlineOnly(() =>
+      setDoc(doc(db, "reports", id), {
+        reporterUid: input.reporterUid,
+        targetUid: input.targetUid,
+        ...(input.chatId ? { chatId: input.chatId } : {}),
+        ...(input.messageId ? { messageId: input.messageId } : {}),
+        ...(messageText ? { messageText: clipReportText(messageText) } : {}),
+        reason: input.reason,
+        ...(comment ? { comment: clipReportText(comment) } : {}),
+        createdAt: serverTimestamp(),
+        status: "open",
+      })
+    );
+  } catch (err) {
+    if ((err as { code?: string })?.code === "permission-denied") {
+      throw new ReportError(
+        "unavailable",
+        "Функція скарг ще вмикається (або ви вже скаржились на це). Спробуйте пізніше."
+      );
+    }
+    throw err;
+  }
+  rememberReported(input.reporterUid, id);
+}
+
+function mapReport(snap: { id: string; data: () => Record<string, unknown> }): Report {
+  const d = snap.data();
+  return {
+    id: snap.id,
+    reporterUid: d.reporterUid as string,
+    targetUid: d.targetUid as string,
+    chatId: (d.chatId as string) ?? null,
+    messageId: (d.messageId as string) ?? null,
+    messageText: (d.messageText as string) ?? null,
+    reason: isReportReason(d.reason) ? d.reason : "other",
+    comment: (d.comment as string) ?? null,
+    createdAt: tsToIso(d.createdAt),
+    status: d.status === "closed" ? "closed" : "open",
+  };
+}
+
+/** Site admin only: open reports, newest first (sorted here, so no composite index is needed). */
+export async function listOpenReports(): Promise<Report[]> {
+  const snap = await getDocs(query(collection(db, "reports"), where("status", "==", "open")));
+  return snap.docs.map(mapReport).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function closeReport(reportId: string): Promise<void> {
+  await updateDoc(doc(db, "reports", reportId), { status: "closed" });
 }

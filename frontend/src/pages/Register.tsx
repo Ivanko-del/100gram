@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { firebaseConfigured } from "../firebase";
 import { createAuthAccount, discardUnfinishedAccount, finishRegistration } from "../data/firestore-api";
@@ -28,6 +28,7 @@ function registerError(e: unknown): string {
 
 export default function Register() {
   const { uid, user } = useAuth();
+  const location = useLocation();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -82,7 +83,7 @@ export default function Register() {
         <form className="auth-form" onSubmit={onSubmit}>
           <label>
             Ім'я та прізвище
-            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Антон Коваль" />
+            <input value={displayName} maxLength={48} onChange={(e) => setDisplayName(e.target.value)} placeholder="Антон Коваль" />
           </label>
           <label>
             Username
@@ -128,7 +129,7 @@ export default function Register() {
         </form>
 
         <p className="auth-switch">
-          Вже є акаунт? <Link to="/login">Увійти</Link>
+          Вже є акаунт? <Link to="/login" state={location.state}>Увійти</Link>
         </p>
       </div>
     </div>

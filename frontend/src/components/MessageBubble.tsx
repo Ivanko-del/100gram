@@ -4,6 +4,7 @@ import {
   BarChart3,
   Check,
   CheckCheck,
+  Clock,
   Copy,
   Image as ImageIcon,
   MoreHorizontal,
@@ -11,15 +12,18 @@ import {
   Pin,
   PinOff,
   Reply,
+  Flag,
   Forward as ForwardIcon,
   SmilePlus,
   Trash2,
   X,
 } from "lucide-react";
-import { REACTIONS_FREE, REACTIONS_PREMIUM } from "../constants";
+import { MAX_MESSAGE_LENGTH, REACTIONS_FREE, REACTIONS_PREMIUM } from "../constants";
 import { ChatMessage } from "../types";
+import { messageStatus } from "../utils/messageStatus";
 import { renderWithMentions } from "../utils/mentions";
 import UserName from "./UserName";
+import MentionLink from "./MentionLink";
 
 interface Props {
   message: ChatMessage;
@@ -32,6 +36,8 @@ interface Props {
   onReact?: (message: ChatMessage, emoji: string) => void;
   /** Direct chats: when the other person last read - drives ✓ / ✓✓ on my messages */
   peerReadAt?: string | null;
+  /** Direct chats: when the other person's client last received a message - drives grey ✓✓ */
+  peerDeliveredAt?: string | null;
   onReply?: (message: ChatMessage) => void;
   onEdit?: (message: ChatMessage, text: string) => void;
   onForward?: (message: ChatMessage) => void;
@@ -44,6 +50,12 @@ interface Props {
   isPinned?: boolean;
   onPin?: (message: ChatMessage) => void;
   onUnpin?: () => void;
+  /** report this (someone else's) message */
+  onReport?: (message: ChatMessage) => void;
+  /** a @username in the text was clicked and resolved to this user id */
+  onMentionOpen?: (uid: string) => void;
+  /** a @username in the text belongs to nobody */
+  onMentionMissing?: (username: string) => void;
 }
 
 function formatTime(iso: string) {
@@ -60,6 +72,7 @@ export default function MessageBubble({
   isPremium,
   onReact,
   peerReadAt,
+  peerDeliveredAt,
   onReply,
   onEdit,
   onForward,
@@ -70,6 +83,9 @@ export default function MessageBubble({
   isPinned,
   onPin,
   onUnpin,
+  onReport,
+  onMentionOpen,
+  onMentionMissing,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -125,13 +141,13 @@ export default function MessageBubble({
             <img
               className="message-image"
               src={message.content}
-              alt=""
+              alt="Фото"
               loading="lazy"
               onClick={() => setLightboxOpen(true)}
             />
             {lightboxOpen &&
               createPortal(
-                <div className="lightbox-overlay" onClick={() => setLightboxOpen(false)}>
+                <div className="lightbox-overlay" role="dialog" aria-modal="true" aria-label="Перегляд фото" onClick={() => setLightboxOpen(false)}>
                   <button
                     type="button"
                     className="lightbox-close"
@@ -162,7 +178,7 @@ export default function MessageBubble({
               setEditing(false);
             }}
           >
-            <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} autoFocus />
+            <textarea aria-label="Редагувати повідомлення" value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} maxLength={MAX_MESSAGE_LENGTH} autoFocus />
             <div className="message-edit-actions">
               <button type="submit" className="btn-primary">Зберегти</button>
               <button type="button" className="btn-ghost" onClick={() => setEditing(false)}>Скасувати</button>
@@ -170,7 +186,9 @@ export default function MessageBubble({
           </form>
         ) : (
           <div className="message-content">
-            {renderWithMentions(message.content)}
+            {renderWithMentions(message.content, (token, key) => (
+              <MentionLink key={key} token={token} onOpen={onMentionOpen} onMissing={onMentionMissing} />
+            ))}
             {message.editedAt && <span className="message-edited"> (ред.)</span>}
           </div>
         )}
@@ -182,6 +200,7 @@ export default function MessageBubble({
                 key={emoji}
                 className={`reaction-chip ${myUid && uids.includes(myUid) ? "mine" : ""}`}
                 onClick={() => onReact?.(message, emoji)}
+                aria-label={`Реакція ${emoji}: ${uids.length}`}
               >
                 {emoji} <span>{uids.length}</span>
               </button>
@@ -190,19 +209,15 @@ export default function MessageBubble({
         )}
         <div className="message-time">
           {formatTime(message.createdAt)}
-          {isOwn && peerReadAt !== undefined && (
-            <span className={`message-ticks ${peerReadAt && new Date(peerReadAt) >= new Date(message.createdAt) ? "read" : ""}`}>
-              {peerReadAt && new Date(peerReadAt) >= new Date(message.createdAt) ? <CheckCheck size={14} /> : <Check size={14} />}
-            </span>
-          )}
+          {isOwn && peerReadAt !== undefined && <MessageTicks message={message} peerReadAt={peerReadAt} peerDeliveredAt={peerDeliveredAt} />}
         </div>
         {onReact && (
-          <button type="button" className="message-react-btn" onClick={() => { setPicking((v) => !v); setMenuOpen(false); }} title="Реакція">
+          <button type="button" className="message-react-btn" onClick={() => { setPicking((v) => !v); setMenuOpen(false); }} title="Реакція" aria-label="Додати реакцію">
             <SmilePlus size={14} />
           </button>
         )}
-        {(onReply || onForward || onEdit || canPin) && (
-          <button type="button" className="message-react-btn message-more-btn" onClick={() => { setMenuOpen((v) => !v); setPicking(false); }} title="Дії">
+        {(onReply || onForward || onEdit || canPin || (onReport && !isOwn)) && (
+          <button type="button" className="message-react-btn message-more-btn" onClick={() => { setMenuOpen((v) => !v); setPicking(false); }} title="Дії" aria-label="Дії з повідомленням">
             <MoreHorizontal size={14} />
           </button>
         )}
@@ -231,6 +246,11 @@ export default function MessageBubble({
             {canPin && isPinned && onUnpin && (
               <button type="button" onClick={() => { setMenuOpen(false); onUnpin(); }}>
                 <PinOff size={15} /> Відкріпити
+              </button>
+            )}
+            {onReport && !isOwn && (
+              <button type="button" onClick={() => { setMenuOpen(false); onReport(message); }}>
+                <Flag size={15} /> Поскаржитись
               </button>
             )}
             {message.type === "text" && (
@@ -286,6 +306,16 @@ export default function MessageBubble({
         )}
       </div>
     </div>
+  );
+}
+
+function MessageTicks({ message, peerReadAt, peerDeliveredAt }: { message: ChatMessage; peerReadAt: string | null; peerDeliveredAt?: string | null }) {
+  const status = messageStatus({ pending: !!message.pending, createdAt: message.createdAt, peerReadAt, peerDeliveredAt });
+  const label = { pending: "Надсилається", sent: "Надіслано", delivered: "Доставлено", read: "Прочитано" }[status];
+  return (
+    <span className={`message-ticks ${status}`} title={label} aria-label={label}>
+      {status === "pending" ? <Clock size={13} /> : status === "sent" ? <Check size={14} /> : <CheckCheck size={14} />}
+    </span>
   );
 }
 
