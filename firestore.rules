@@ -63,7 +63,9 @@ service cloud.firestore {
         // else's `grams` - but only that field, and only upward.
         || (isSignedIn()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["grams"])
-          && request.resource.data.grams > resource.data.grams)
+          && request.resource.data.grams > resource.data.grams
+          // one transfer is capped at 1 000 000 on the client (transferGrams)
+          && request.resource.data.grams - resource.data.grams <= 1000000)
         // Site admin: grant/clear a custom badge, or mute someone site-wide -
         // nothing else on someone else's account.
         || (isSiteAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["badge", "mutedGlobally"]));
@@ -80,9 +82,23 @@ service cloud.firestore {
         // A transfer/premium purchase needs to write into BOTH the sender's
         // and the recipient's transaction history in one client call, so
         // any signed-in user may create a doc here as long as they are
-        // named as its counterpart (i.e. they are the other side of it).
-        allow create: if isOwner(uid)
-          || (isSignedIn() && request.resource.data.counterpart == request.auth.uid);
+        // named as its counterpart (i.e. they are the other side of it) -
+        // and then it can only be a plain incoming transfer with a positive
+        // amount, exactly the shape transferGrams() writes for the recipient.
+        function incomingTransferOk() {
+          let d = request.resource.data;
+          return isSignedIn()
+            && d.keys().hasOnly(['amount', 'type', 'note', 'counterpart', 'counterpartUsername', 'createdAt'])
+            && d.keys().hasAll(['amount', 'type', 'counterpart', 'createdAt'])
+            && d.counterpart == request.auth.uid
+            && d.counterpart != uid
+            && d.type == 'transfer'
+            && d.amount is number && d.amount > 0 && d.amount <= 1000000
+            && (d.get('note', null) == null || (d.note is string && d.note.size() <= 500))
+            && (d.get('counterpartUsername', null) == null || (d.counterpartUsername is string && d.counterpartUsername.size() <= 100))
+            && d.createdAt == request.time;
+        }
+        allow create: if isOwner(uid) || incomingTransferOk();
         allow update, delete: if false;
       }
     }
@@ -147,16 +163,41 @@ service cloud.firestore {
       }
       // `readBy` maps uid -> when they last read; a member may only touch
       // their OWN entry.
+      // The entry must be the server time (the client writes serverTimestamp()).
       function readByChangeOk() {
         return !request.resource.data.diff(resource.data).affectedKeys().hasAny(["readBy"])
-          || request.resource.data.readBy.diff(resource.data.get('readBy', {})).affectedKeys().hasOnly([request.auth.uid]);
+          || (request.resource.data.readBy.diff(resource.data.get('readBy', {})).affectedKeys().hasOnly([request.auth.uid])
+            && request.resource.data.readBy[request.auth.uid] == request.time);
       }
       // `deliveredTo` is the same shape as `readBy` (uid -> when that member's
       // client received the latest message); a member may only touch their
       // OWN entry.
       function deliveredToChangeOk() {
         return !request.resource.data.diff(resource.data).affectedKeys().hasAny(["deliveredTo"])
-          || request.resource.data.deliveredTo.diff(resource.data.get('deliveredTo', {})).affectedKeys().hasOnly([request.auth.uid]);
+          || (request.resource.data.deliveredTo.diff(resource.data.get('deliveredTo', {})).affectedKeys().hasOnly([request.auth.uid])
+            && request.resource.data.deliveredTo[request.auth.uid] == request.time);
+      }
+      // The chat-list preview. Two legitimate writers:
+      //  - sendMessage(): lastMessage.senderUid is the sender and its
+      //    createdAt is the server time (same batch => same request.time);
+      //  - editMessage()/deleteMessage() fixing the preview: lastMessage is
+      //    then the ONLY key touched, keeps the older message's time (which
+      //    can't be in the future) and may name another author, or be null.
+      function lastMessageChangeOk() {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        let lm = request.resource.data.get('lastMessage', null);
+        return !changed.hasAny(["lastMessage"])
+          || lm == null
+          || (lm is map
+            && lm.keys().hasOnly(['content', 'senderUid', 'createdAt'])
+            && lm.content is string && lm.content.size() <= 4100
+            && lm.senderUid is string
+            && ((lm.senderUid == request.auth.uid && lm.createdAt == request.time)
+              || (changed.hasOnly(["lastMessage"]) && lm.createdAt is timestamp && lm.createdAt <= request.time)));
+      }
+      function updatedAtChangeOk() {
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(["updatedAt"])
+          || request.resource.data.updatedAt == request.time;
       }
       // Leaving yourself: your uid disappears from memberUids/adminUids and
       // nothing else about the member list changes.
@@ -194,7 +235,9 @@ service cloud.firestore {
           // mark the chat read / delivered for themselves
           (request.resource.data.diff(resource.data).affectedKeys().hasOnly(["updatedAt", "lastMessage", "readBy", "deliveredTo"])
             && readByChangeOk()
-            && deliveredToChangeOk())
+            && deliveredToChangeOk()
+            && lastMessageChangeOk()
+            && updatedAtChangeOk())
           // any member may invite more people into a plain group; channels
           // need admin rights even just to invite
           || (resource.data.isChannel != true && isMemberAddition())
@@ -216,10 +259,23 @@ service cloud.firestore {
       }
 
       match /messages/{messageId} {
+        // Shape/size of a new message, mirroring sendMessage(): text and poll
+        // questions are capped like MAX_MESSAGE_LENGTH (4000), an image is a
+        // base64 data URL the client keeps under ~700 KB (cap 900 000 chars
+        // keeps the doc below Firestore's 1 MiB limit). createdAt is server time.
+        function messageShapeOk() {
+          let d = request.resource.data;
+          return d.content is string
+            && d.type in ['text', 'image', 'poll']
+            && ((d.type == 'image' && d.content.size() <= 900000)
+              || (d.type != 'image' && d.content.size() <= 4000))
+            && d.createdAt == request.time;
+        }
         allow read: if isSignedIn() && request.auth.uid in chatData().memberUids;
         allow create: if isSignedIn()
           && request.auth.uid in chatData().memberUids
           && request.resource.data.senderUid == request.auth.uid
+          && messageShapeOk()
           && canPostIn()
           && !isChatMuted()
           && !isGloballyMuted();
