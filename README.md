@@ -107,7 +107,7 @@ npm run lint      # ESLint
 npm run test      # Vitest
 npx tsc -b        # типи мають бути чисті
 npx vite build    # білд має проходити без помилок
-npm run test:rules  # тести firestore.rules на емуляторі (потрібні Java і мережа для першого завантаження емулятора)
+npm run test:rules  # тести firestore.rules на емуляторі (Java + мережа для першого завантаження емулятора); ганяються і в CI
 ```
 
 Усі чотири команди ганяються автоматично в GitHub Actions (`.github/workflows/ci.yml`)

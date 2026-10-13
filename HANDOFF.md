@@ -3,6 +3,40 @@
 Нотатка для наступної Claude-сесії (або для себе), що саме лишилось
 незакінченим. Гілка: `claude/telegram-100-gram-clone-fuadhq`.
 
+## Найновіше: посилення правил, тести, a11y (потрібен ручний Publish правил!)
+
+Після аудиту коду зроблено (гілка `claude/100gram-offline-statuses-reports-8uno8t`, `main` = вона):
+
+- **`firestore.rules` посилено - ПОТРІБЕН РУЧНИЙ PUBLISH** (Console → Firestore → Rules). Нове:
+  `messages` create: `content` рядок, `type` ∈ text/image/poll, текст/опитування ≤ 4000
+  (= `MAX_MESSAGE_LENGTH`), фото ≤ 900000 символів, `createdAt == request.time`;
+  `transactions` create не-власником: лише `type=='transfer'`, сума 1..1 000 000, суворий
+  набір ключів, `createdAt == request.time`; приріст чужих `grams` ≤ 1 000 000;
+  `chats.lastMessage`: або автор = ти і `createdAt == request.time`, або "ремонт прев'ю"
+  (змінюється лише `lastMessage`, час у минулому - потрібно для edit/delete повідомлення);
+  `updatedAt == request.time`; `readBy[uid]` і `deliveredTo[uid] == request.time`.
+  Старі клієнти/кеш, що пишуть інші ключі, будуть відхилені - поточний клієнт пише рівно дозволене
+  (звірено з `sendMessage`/`editMessage`/`deleteMessage`/`markChatRead`).
+- **Тести правил**: 38 (було 16), `npm run test:rules`; **тепер ганяються в CI** (job `rules`
+  в `.github/workflows/ci.yml`: Java 17 + Node 20). Саму CI в GitHub не запускали -
+  перевір першу зелену/червону збірку.
+- **Тести клієнта**: 76 (було 55). Новий `data/firestore-api.logic.test.ts` (перекази,
+  офлайн-захист, скарги, `markChatDelivered`; firebase замокано). `mapMessage`/`pending`
+  не покрито (не експортована, тест нічого б не перевіряв).
+- **Доступність**: `role="dialog" aria-modal aria-label` на модалках, `aria-label` на
+  іконкових кнопках і полях, `aria-live`/`role="alert"` на помилках і офлайн-банері.
+  Не зроблено: Esc і focus trap у модалках, клавіатурний доступ до клікабельних не-кнопок.
+
+**Відомі застереження правил**: адмін чату (`adminUids`) як і раніше може писати будь-який
+`lastMessage`/`updatedAt`; "ремонт прев'ю" дозволяє вказати довільний `senderUid` (лише
+ускладнює підробку); редагування тексту (`content`) не обмежене по довжині.
+
+**Свідомо НЕ зроблено і чому**: апгрейд залежностей (`npm audit`; ризик зламати збірку без
+живого тестування); ліміт/пагінація списку чатів і лічильників непрочитаних (змінює
+поведінку); push, голосові, Storage, дзвінки, прев'ю посилань (Blaze/сервер);
+`firestore.indexes.json` (поточні запити індексів не потребують); розбиття
+`SettingsPage.tsx`/`index.css`; живе тестування в браузері (жодного разу не було з sandbox).
+
 ## Додано останньою сесією: офлайн, статуси повідомлень, скарги
 
 Робоча гілка цієї сесії: `claude/100gram-offline-statuses-reports-8uno8t`
