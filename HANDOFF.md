@@ -18,7 +18,7 @@
   Старі клієнти/кеш, що пишуть інші ключі, будуть відхилені - поточний клієнт пише рівно дозволене
   (звірено з `sendMessage`/`editMessage`/`deleteMessage`/`markChatRead`).
 - **Тести правил**: 38 (було 16), `npm run test:rules`; **тепер ганяються в CI** (job `rules`
-  в `.github/workflows/ci.yml`: Java 17 + Node 20). Саму CI в GitHub не запускали -
+  в `.github/workflows/ci.yml`: Java 21 + Node 20). Саму CI в GitHub не запускали -
   перевір першу зелену/червону збірку.
 - **Тести клієнта**: 76 (було 55). Новий `data/firestore-api.logic.test.ts` (перекази,
   офлайн-захист, скарги, `markChatDelivered`; firebase замокано). `mapMessage`/`pending`
