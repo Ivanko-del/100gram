@@ -1234,17 +1234,20 @@ function PremiumTab({ user }: TabProps) {
         <p>{meta.blurb}</p>
       </div>
 
-      <div className="tier-switch" role="tablist" aria-label="Рівень підписки">
+      <div className="tier-cards" role="tablist" aria-label="Рівень підписки">
         {(Object.keys(TIER_META) as PremiumTier[]).map((t) => (
           <button
             key={t}
             type="button"
             role="tab"
             aria-selected={tier === t}
-            className={`tier-switch-btn ${tier === t ? "active" : ""}`}
+            className={`plan-card tier-card tier-card-${t} ${tier === t ? "selected" : ""}`}
             onClick={() => setTier(t)}
           >
-            {TIER_META[t].icon} {TIER_META[t].label}
+            {user.premiumTier === t && <div className="plan-badge">Активний</div>}
+            <div className="plan-icon">{TIER_META[t].icon}</div>
+            <div className="plan-label">{TIER_META[t].label}</div>
+            <div className="plan-meta">від {PLANS_BY_TIER[t][0].price} 🥃/міс</div>
           </button>
         ))}
       </div>
