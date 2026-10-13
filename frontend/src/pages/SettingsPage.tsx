@@ -77,6 +77,7 @@ import {
   TIER_META,
   TIER_RANK,
   isSiteAdmin,
+  isStaff,
   tierLimits,
 } from "../constants";
 import { PremiumPlan, PremiumTier, PublicUser, Report, User, WalletTransaction } from "../types";
@@ -225,7 +226,7 @@ export default function SettingsPage() {
             <NavRow icon={<Gift size={18} />} color="#f0842c" label="Надіслати подарунок" onClick={() => openTab("wallet")} />
           </div>
 
-          {isSiteAdmin(user.username) && (
+          {isStaff(user.username, user.siteRole) && (
             <div className="settings-group">
               <NavRow icon={<Flag size={18} />} color="#e5546a" label="🚩 Скарги" active={tab === "reports"} onClick={() => openTab("reports")} />
             </div>
@@ -271,7 +272,7 @@ export default function SettingsPage() {
         {tab === "wallet" && <WalletTab user={user} />}
         {tab === "premium" && <PremiumTab user={user} />}
         {tab === "account" && <AccountTab user={user} />}
-        {tab === "reports" && isSiteAdmin(user.username) && <ReportsTab />}
+        {tab === "reports" && isStaff(user.username, user.siteRole) && <ReportsTab />}
       </main>
     </div>
   );

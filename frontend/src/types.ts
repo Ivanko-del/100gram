@@ -22,6 +22,7 @@ export interface User {
   /** Active subscription level; null when no active subscription */
   premiumTier?: PremiumTier | null;
   premiumUntil?: string | null;
+  siteRole?: SiteRole | null;
   grams: number;
   mutedGlobally?: boolean;
   /** Optional, ISO date (YYYY-MM-DD) */
@@ -138,6 +139,9 @@ export interface ChatMessage {
 }
 
 export type PremiumTier = "premium" | "max";
+
+/** Staff role handed out by the site admin (the admin itself is hardcoded). */
+export type SiteRole = "moderator";
 
 export interface PremiumPlan {
   id: string;

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from "@firebase/rules-unit-testing";
-import { deleteField, doc, getDoc, serverTimestamp, setDoc, updateDoc, writeBatch, Timestamp, FieldPath } from "firebase/firestore";
+import { deleteDoc, deleteField, doc, getDoc, serverTimestamp, setDoc, updateDoc, writeBatch, Timestamp, FieldPath } from "firebase/firestore";
 
 let env: RulesTestEnvironment;
 
@@ -23,6 +23,8 @@ beforeEach(async () => {
     await setDoc(doc(db, "users/alice"), { username: "Alice", usernameLower: "alice", grams: 100 });
     await setDoc(doc(db, "users/bob"), { username: "Bob", usernameLower: "bob", grams: 100 });
     await setDoc(doc(db, "users/admin"), { username: "theivankoo", usernameLower: "theivankoo", grams: 0 });
+    await setDoc(doc(db, "users/mod"), { username: "Mod", usernameLower: "mod", grams: 0, siteRole: "moderator" });
+    await setDoc(doc(db, "users/mod2"), { username: "Mod2", usernameLower: "mod2", grams: 0, siteRole: "moderator" });
     await setDoc(doc(db, "chats/dm"), { memberUids: ["alice", "bob"], adminUids: [], isGroup: false, readBy: {} });
   });
 });
@@ -250,3 +252,49 @@ describe("users/{uid}/transactions create", () => {
   });
 });
 void deleteField;
+
+describe("moderator role and admin-managed subscriptions", () => {
+  it("a user cannot grant themselves the moderator role", async () => {
+    await assertFails(updateDoc(doc(as("alice"), "users/alice"), { siteRole: "moderator" }));
+  });
+  it("a moderator cannot hand the role to someone else or to themselves", async () => {
+    await assertFails(updateDoc(doc(as("mod"), "users/alice"), { siteRole: "moderator" }));
+    await assertFails(updateDoc(doc(as("mod"), "users/mod"), { siteRole: null }));
+  });
+  it("the owner can still edit their profile while keeping the role", async () => {
+    await assertSucceeds(updateDoc(doc(as("mod"), "users/mod"), { bio: "hi" }));
+    await assertSucceeds(updateDoc(doc(as("alice"), "users/alice"), { bio: "hi" }));
+  });
+  it("the admin appoints and dismisses moderators", async () => {
+    await assertSucceeds(updateDoc(doc(as("admin"), "users/alice"), { siteRole: "moderator" }));
+    await assertSucceeds(updateDoc(doc(as("admin"), "users/mod"), { siteRole: null }));
+  });
+  it("the admin grants and revokes a subscription, but cannot touch other fields", async () => {
+    const until = Timestamp.fromDate(new Date(Date.now() + 86400000));
+    await assertSucceeds(updateDoc(doc(as("admin"), "users/alice"), { isPremium: true, premiumTier: "max", premiumUntil: until }));
+    await assertSucceeds(updateDoc(doc(as("admin"), "users/alice"), { isPremium: false, premiumTier: null, premiumUntil: null }));
+    await assertFails(updateDoc(doc(as("admin"), "users/alice"), { isPremium: true, bio: "x" }));
+  });
+  it("a moderator can mute a regular user but not the admin or another moderator", async () => {
+    await assertSucceeds(updateDoc(doc(as("mod"), "users/alice"), { mutedGlobally: true }));
+    await assertFails(updateDoc(doc(as("mod"), "users/admin"), { mutedGlobally: true }));
+    await assertFails(updateDoc(doc(as("mod"), "users/mod2"), { mutedGlobally: true }));
+  });
+  it("a moderator cannot grant subscriptions or badges", async () => {
+    await assertFails(updateDoc(doc(as("mod"), "users/alice"), { isPremium: true, premiumTier: "max" }));
+    await assertFails(updateDoc(doc(as("mod"), "users/alice"), { badge: { text: "x", color: "#fff" } }));
+  });
+  it("a regular user cannot mute others", async () => {
+    await assertFails(updateDoc(doc(as("alice"), "users/bob"), { mutedGlobally: true }));
+  });
+  it("moderator reads and closes reports but cannot delete them", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "reports/alice_bob_user"), { reporterUid: "alice", targetUid: "bob", reason: "spam", createdAt: Timestamp.now(), status: "open" });
+    });
+    await assertSucceeds(getDoc(doc(as("mod"), "reports/alice_bob_user")));
+    await assertSucceeds(updateDoc(doc(as("mod"), "reports/alice_bob_user"), { status: "closed" }));
+    await assertFails(updateDoc(doc(as("mod"), "reports/alice_bob_user"), { reason: "other" }));
+    await assertFails(deleteDoc(doc(as("mod"), "reports/alice_bob_user")));
+    await assertFails(getDoc(doc(as("alice"), "reports/alice_bob_user")));
+  });
+});

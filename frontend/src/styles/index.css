@@ -4053,3 +4053,27 @@ summary:focus-visible {
   background: linear-gradient(135deg, #6fe3ff, #a98bff);
   box-shadow: 0 0 6px rgba(110, 200, 255, 0.6);
 }
+
+/* ---------- Staff controls ---------- */
+.moderator-badge {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.admin-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.admin-row {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-row > * {
+  flex: 1;
+}

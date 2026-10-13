@@ -40,7 +40,7 @@ import { auth, db } from "../firebase";
 import { AVATAR_COLORS, TIER_META, TIER_RANK, WELCOME_BONUS } from "../constants";
 import { clearChatLock } from "./chat-lock";
 import { OFFLINE_MESSAGE, isOfflineError, isOnline } from "../utils/offline";
-import { ChatFolder, ChatMessage, ChatSummary, PremiumPlan, PremiumTier, PublicUser, Report, User, UserBadge, WalletTransaction } from "../types";
+import { ChatFolder, ChatMessage, ChatSummary, PremiumPlan, PremiumTier, PublicUser, SiteRole, Report, User, UserBadge, WalletTransaction } from "../types";
 import { ReportReason, clipReportText, getReportedIds, isReportReason, reportDocId, rememberReported } from "../utils/reports";
 
 export class DataError extends Error {}
@@ -284,6 +284,7 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     isPremium: isPremiumActive(d),
     premiumTier: isPremiumActive(d) ? (d.premiumTier === "max" ? "max" : "premium") : null,
     premiumUntil: d.premiumUntil ? tsToIso(d.premiumUntil) : null,
+    siteRole: d.siteRole === "moderator" ? "moderator" : null,
     grams: (d.grams as number) ?? 0,
     mutedGlobally: !!d.mutedGlobally,
     birthDate: (d.birthDate as string) ?? null,
@@ -332,6 +333,35 @@ export async function setUserBadge(uid: string, badge: UserBadge | null): Promis
 /** Site-admin only: mutes/unmutes a user across every chat. */
 export async function setGlobalMute(uid: string, muted: boolean): Promise<void> {
   await updateDoc(doc(db, "users", uid), { mutedGlobally: muted });
+}
+
+/** Site-admin only: gives someone a subscription (stacks on remaining time,
+ * and may overwrite a different tier - the admin is not bound by the
+ * no-downgrade rule of purchases). */
+export async function grantSubscription(uid: string, tier: PremiumTier, days: number): Promise<void> {
+  await runTransaction(db, async (tx) => {
+    const ref = doc(db, "users", uid);
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new DataError("Користувача не знайдено");
+    const until = snap.data().premiumUntil as Timestamp | null;
+    const now = new Date();
+    const base = until && until.toDate() > now ? until.toDate() : now;
+    tx.update(ref, {
+      isPremium: true,
+      premiumTier: tier,
+      premiumUntil: Timestamp.fromDate(new Date(base.getTime() + days * 24 * 60 * 60 * 1000)),
+    });
+  });
+}
+
+/** Site-admin only: ends someone's subscription immediately. */
+export async function revokeSubscription(uid: string): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { isPremium: false, premiumTier: null, premiumUntil: null });
+}
+
+/** Site-admin only: appoints (or with null dismisses) a moderator. */
+export async function setSiteRole(uid: string, role: SiteRole | null): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { siteRole: role });
 }
 
 /** Fetches another user's profile to display (bio, premium status, ...).

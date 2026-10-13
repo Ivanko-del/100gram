@@ -88,6 +88,11 @@ export function isSiteAdmin(username: string | undefined | null): boolean {
   return (username ?? "").toLowerCase() === SITE_ADMIN_USERNAME;
 }
 
+/** Site admin (hardcoded) or an appointed moderator. */
+export function isStaff(username: string | undefined | null, role?: string | null): boolean {
+  return isSiteAdmin(username) || role === "moderator";
+}
+
 export interface TierLimits {
   pins: number;
   folders: number;

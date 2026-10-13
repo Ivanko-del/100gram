@@ -18,6 +18,16 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.usernameLower == "theivankoo";
     }
 
+    // Moderators are appointed by the site admin through users/{uid}.siteRole
+    // ("moderator"). The field is admin-only (see the users rules below), so
+    // it cannot be self-granted. A moderator can mute users, delete messages
+    // and close reports - nothing else.
+    function isModerator() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('siteRole', null) == 'moderator';
+    }
+
     // username -> uid reservation, used to enforce unique usernames and
     // to look up a chat/transfer target by @username.
     match /usernames/{username} {
@@ -49,14 +59,17 @@ service cloud.firestore {
       // isSiteAdmin().
       allow create: if isOwner(uid)
         && request.resource.data.usernameLower is string
-        && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.usernameLower)).data.uid == uid;
+        && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.usernameLower)).data.uid == uid
+        && !('siteRole' in request.resource.data);
       // Profile fields are self-editable. This does not stop a client from
       // rewriting its own `grams`/`isPremium` directly - real money-grade
       // integrity would need Cloud Functions to own those fields server-side.
       // Fine for a play-currency demo; do not store anything sensitive here.
       allow update: if (isOwner(uid)
           && request.resource.data.username == resource.data.username
-          && request.resource.data.usernameLower == resource.data.usernameLower)
+          && request.resource.data.usernameLower == resource.data.usernameLower
+          // the moderator role can only be handed out by the site admin
+          && request.resource.data.get('siteRole', null) == resource.data.get('siteRole', null))
         // A transfer credits the RECIPIENT's balance from the sender's own
         // client call (Firestore runs both sides of the transaction under
         // the sender's auth), so a non-owner must be able to raise someone
@@ -66,9 +79,17 @@ service cloud.firestore {
           && request.resource.data.grams > resource.data.grams
           // one transfer is capped at 1 000 000 on the client (transferGrams)
           && request.resource.data.grams - resource.data.grams <= 1000000)
-        // Site admin: grant/clear a custom badge, or mute someone site-wide -
+        // Site admin: grant/clear a custom badge, mute someone site-wide,
+        // grant/revoke a subscription or appoint/dismiss a moderator -
         // nothing else on someone else's account.
-        || (isSiteAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["badge", "mutedGlobally"]));
+        || (isSiteAdmin() && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(["badge", "mutedGlobally", "isPremium", "premiumUntil", "premiumTier", "siteRole"]))
+        // Moderator: only the site-wide mute, and never on the admin or on
+        // another moderator.
+        || (isModerator()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["mutedGlobally"])
+          && resource.data.usernameLower != "theivankoo"
+          && resource.data.get('siteRole', null) != 'moderator');
       allow delete: if isOwner(uid);
 
       // Private per-user data (chat lock: password hash + which chats are
@@ -125,7 +146,10 @@ service cloud.firestore {
           && reportId == d.reporterUid + '_' + d.targetUid + '_' + d.get('messageId', 'user');
       }
       allow create: if isSignedIn() && reportOk();
-      allow read, update, delete: if isSiteAdmin();
+      allow read: if isSiteAdmin() || isModerator();
+      allow update: if isSiteAdmin()
+        || (isModerator() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']));
+      allow delete: if isSiteAdmin();
     }
 
     match /chats/{chatId} {
@@ -300,10 +324,10 @@ service cloud.firestore {
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["content", "editedAt"]))
           );
         // Anyone may delete their own message; the admins of a group/channel
-        // may clean up their chat, and the site admin may delete any message
-        // anywhere, for moderation.
+        // may clean up their chat, and the site admin and moderators may
+        // delete any message anywhere, for moderation.
         allow delete: if isSignedIn()
-          && (resource.data.senderUid == request.auth.uid || isChatAdmin() || isSiteAdmin());
+          && (resource.data.senderUid == request.auth.uid || isChatAdmin() || isSiteAdmin() || isModerator());
       }
 
       match /typing/{uid} {
