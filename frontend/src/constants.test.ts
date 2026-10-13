@@ -41,3 +41,28 @@ describe("subscription tiers", () => {
     PLANS_BY_TIER.max.forEach((p, i) => expect(p.price).toBeGreaterThan(PLANS_BY_TIER.premium[i].price));
   });
 });
+
+describe("partner tiers", () => {
+  it("keep Преміум-level limits and carry a cashback", async () => {
+    const { TIER_LIMITS, TIER_META } = await import("./constants");
+    for (const t of ["axioma", "slotok"] as const) {
+      expect(TIER_LIMITS[t]).toEqual(TIER_LIMITS.premium);
+      expect(TIER_META[t].cashback).toBeGreaterThan(0);
+    }
+  });
+
+  it("cashbackFor floors and is zero without a cashback tier", async () => {
+    const { cashbackFor } = await import("./constants");
+    expect(cashbackFor("axioma", 255)).toBe(25);
+    expect(cashbackFor("slotok", 99)).toBe(4);
+    expect(cashbackFor("premium", 1000)).toBe(0);
+    expect(cashbackFor(null, 1000)).toBe(0);
+  });
+
+  it("parseTier falls back to premium for unknown values", async () => {
+    const { parseTier } = await import("./constants");
+    expect(parseTier("slotok")).toBe("slotok");
+    expect(parseTier("whatever")).toBe("premium");
+    expect(parseTier(undefined)).toBe("premium");
+  });
+});

@@ -37,7 +37,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
-import { AVATAR_COLORS, TIER_META, TIER_RANK, WELCOME_BONUS } from "../constants";
+import { AVATAR_COLORS, TIER_META, TIER_RANK, WELCOME_BONUS, cashbackFor, parseTier } from "../constants";
 import { clearChatLock } from "./chat-lock";
 import { OFFLINE_MESSAGE, isOfflineError, isOnline } from "../utils/offline";
 import { ChatFolder, ChatMessage, ChatSummary, PremiumPlan, PremiumTier, PublicUser, SiteRole, Report, User, UserBadge, WalletTransaction } from "../types";
@@ -282,7 +282,7 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     avatarColor: d.avatarColor as string,
     avatarUrl: (d.avatarUrl as string) ?? null,
     isPremium: isPremiumActive(d),
-    premiumTier: isPremiumActive(d) ? (d.premiumTier === "max" ? "max" : "premium") : null,
+    premiumTier: isPremiumActive(d) ? parseTier(d.premiumTier) : null,
     premiumUntil: d.premiumUntil ? tsToIso(d.premiumUntil) : null,
     siteRole: d.siteRole === "moderator" ? "moderator" : null,
     grams: (d.grams as number) ?? 0,
@@ -1109,7 +1109,7 @@ export async function transferGrams(fromUid: string, fromUsername: string, toUse
 function nextPremium(data: { premiumUntil?: Timestamp | null; premiumTier?: string }, plan: PremiumPlan) {
   const now = new Date();
   const active = !!data.premiumUntil && data.premiumUntil.toDate() > now;
-  const current: PremiumTier | null = active ? (data.premiumTier === "max" ? "max" : "premium") : null;
+  const current: PremiumTier | null = active ? parseTier(data.premiumTier) : null;
   if (current && TIER_RANK[current] > TIER_RANK[plan.tier]) {
     throw new DataError(`У тебе вже активний ${TIER_META[current].label} — нижчий рівень купити не можна`);
   }
@@ -1143,13 +1143,18 @@ export async function buyPremium(uid: string, plan: PremiumPlan) {
 export async function topUpGramsFromAxioma(uid: string, grams: number, axiomaAmount: number): Promise<void> {
   return onlineOnly(async () => {
     const ref = doc(db, "users", uid);
+    // Аксіома+ / СлотОК+ subscribers get a ГРАМ cashback on top of the top-up
+    const snap = await getDoc(ref);
+    const d = snap.exists() ? (snap.data() as Record<string, unknown>) : {};
+    const tier = isPremiumActive(d) ? parseTier(d.premiumTier) : null;
+    const cashback = cashbackFor(tier, grams);
     const txRef = doc(collection(ref, "transactions"));
     const batch = writeBatch(db);
-    batch.update(ref, { grams: increment(grams) });
+    batch.update(ref, { grams: increment(grams + cashback) });
     batch.set(txRef, {
-      amount: grams,
+      amount: grams + cashback,
       type: "axioma_topup",
-      note: `Поповнення з картки Аксіоми (${axiomaAmount} ₴)`,
+      note: `Поповнення з картки Аксіоми (${axiomaAmount} ₴)${cashback > 0 && tier ? ` · кешбек ${TIER_META[tier].label} +${cashback}` : ""}`,
       counterpart: null,
       counterpartUsername: null,
       createdAt: serverTimestamp(),

@@ -1,3 +1,4 @@
+import { TIER_META } from "../constants";
 import type { PremiumTier } from "../types";
 
 interface AvatarProps {
@@ -24,7 +25,7 @@ export default function Avatar({ name, color, photoUrl, size = 44, isPremium, ti
 
   return (
     <div
-      className={`avatar-wrap ${isPremium ? "avatar-wrap-premium" : ""} ${isPremium && tier === "max" ? "avatar-wrap-max" : ""}`}
+      className={`avatar-wrap ${isPremium ? "avatar-wrap-premium" : ""} ${isPremium && tier && tier !== "premium" ? `avatar-wrap-${tier}` : ""}`}
       style={{ width: size + ringPad * 2, height: size + ringPad * 2, padding: ringPad }}
     >
       {icon ? (
@@ -38,7 +39,7 @@ export default function Avatar({ name, color, photoUrl, size = 44, isPremium, ti
           {initials || "?"}
         </div>
       )}
-      {isPremium && <span className="avatar-premium-badge">{tier === "max" ? "💎" : "⭐"}</span>}
+      {isPremium && <span className="avatar-premium-badge">{tier ? TIER_META[tier].icon : "⭐"}</span>}
     </div>
   );
 }

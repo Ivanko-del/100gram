@@ -24,6 +24,7 @@ import {
   LogOut,
   MessageSquare,
   Palette,
+  Coins,
   Film,
   Gem,
   Image as ImageIcon,
@@ -1209,25 +1210,28 @@ function PremiumTab({ user }: TabProps) {
     { icon: MessageCircle, title: `До ${limits.reactions} реакцій на повідомлення`, sub: `Замість ${free.reactions}` },
     { icon: PenLine, title: `«Про себе» до ${limits.bio} символів`, sub: `Замість ${free.bio}` },
   ];
+  const meta = TIER_META[tier];
   const features =
-    tier === "max"
-      ? [
-          { icon: Gem, title: "Діамантова рамка й значок 💎", sub: "Відрізняє Макс від звичайного преміуму" },
-          { icon: Crown, title: "Усе з Преміуму", sub: "Кольори, фони, статус, GIF-аватарка, банер" },
-          ...limitFeatures,
-        ]
-      : [...baseFeatures, ...limitFeatures];
+    tier === "premium"
+      ? [...baseFeatures, ...limitFeatures]
+      : tier === "max"
+        ? [
+            { icon: Gem, title: "Діамантова рамка й значок 💎", sub: "Відрізняє Макс від звичайного преміуму" },
+            { icon: Crown, title: "Усе з Преміуму", sub: "Кольори, фони, статус, GIF-аватарка, банер" },
+            ...limitFeatures,
+          ]
+        : [
+            { icon: Gem, title: `Значок ${meta.icon} і власна рамка`, sub: `${meta.label}: видно в кожному чаті` },
+            { icon: Coins, title: `Кешбек ${meta.cashback}% ГРАМами`, sub: "При поповненні ГРАМів карткою Аксіоми" },
+            { icon: Crown, title: "Усе з Преміуму", sub: "Кольори, фони, статус, GIF-аватарка, банер, ліміти Преміуму" },
+          ];
 
   return (
     <div className="settings-panel">
-      <div className={`premium-hero ${tier === "max" ? "premium-hero-max" : ""}`}>
-        <div className="premium-hero-crown">{tier === "max" ? "💎" : "👑"}</div>
+      <div className={`premium-hero premium-hero-${tier}`}>
+        <div className="premium-hero-crown">{tier === "premium" ? "👑" : meta.icon}</div>
         <h2>100 ГРАМ {TIER_META[tier].label}</h2>
-        <p>
-          {tier === "max"
-            ? "Максимум можливостей: більші ліміти й діамантовий значок"
-            : "Виділяйся, отримуй бонуси і підтримуй розробку застосунку"}
-        </p>
+        <p>{meta.blurb}</p>
       </div>
 
       <div className="tier-switch" role="tablist" aria-label="Рівень підписки">

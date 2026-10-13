@@ -138,7 +138,9 @@ export interface ChatMessage {
   forwardedFrom?: string | null;
 }
 
-export type PremiumTier = "premium" | "max";
+/** Subscription levels. "axioma" / "slotok" are partner-product tiers: Преміум-level
+ * limits plus their own badge and a ГРАМ cashback on Аксіома card top-ups. */
+export type PremiumTier = "premium" | "max" | "axioma" | "slotok";
 
 /** Staff role handed out by the site admin (the admin itself is hardcoded). */
 export type SiteRole = "moderator";
