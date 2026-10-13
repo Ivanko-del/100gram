@@ -3,15 +3,24 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   Bell,
+  Brush,
   Cake,
   Clock,
   CornerDownLeft,
   Crown,
+  Film,
+  Image as ImageIcon,
   LayoutList,
   Lock,
+  MessageCircle,
   MessageSquare,
   Palette,
+  PenLine,
+  Pin,
   Shield,
+  Smile,
+  Sparkles,
+  Star,
   User as UserIcon,
   Wallet,
 } from "lucide-react";
@@ -1033,6 +1042,22 @@ function PremiumTab({ user }: TabProps) {
 
   const bestValueId = PREMIUM_PLANS[PREMIUM_PLANS.length - 1]?.id;
   const planIcons: Record<string, string> = { "1m": "🚀", "6m": "💎", "12m": "👑" };
+  const basePlan = PREMIUM_PLANS[0];
+  const perMonth = (plan: PremiumPlan) => Math.round(plan.price / (plan.days / 30));
+  const saving = (plan: PremiumPlan) =>
+    basePlan ? Math.round((1 - perMonth(plan) / perMonth(basePlan)) * 100) : 0;
+  const features = [
+    { icon: Star, title: "Золота рамка й зірка", sub: "Тебе видно в кожному чаті" },
+    { icon: Palette, title: "5 акцентних кольорів", sub: "Замість одного" },
+    { icon: ImageIcon, title: "Преміум-фони чату", sub: "Захід, океан, ліс" },
+    { icon: Pin, title: `До ${PREMIUM_PIN_LIMIT} закріплених чатів`, sub: `У безкоштовних — ${FREE_PIN_LIMIT}` },
+    { icon: Smile, title: "Емодзі-статус", sub: "Біля імені + текст статусу" },
+    { icon: Sparkles, title: "Колір імені й банер профілю", sub: "Градієнтний банер" },
+    { icon: Film, title: "GIF-аватарка", sub: "Анімована" },
+    { icon: MessageCircle, title: "14 ексклюзивних реакцій", sub: `До ${PREMIUM_REACTIONS_PER_MESSAGE} на повідомлення (замість ${FREE_REACTIONS_PER_MESSAGE})` },
+    { icon: Brush, title: "6 кольорів аватара", sub: "Ексклюзивні" },
+    { icon: PenLine, title: `«Про себе» до ${PREMIUM_BIO_LIMIT} символів`, sub: `Замість ${FREE_BIO_LIMIT}` },
+  ];
 
   return (
     <div className="settings-panel">
@@ -1043,16 +1068,15 @@ function PremiumTab({ user }: TabProps) {
       </div>
 
       <ul className="premium-features">
-        <li>⭐ Золота рамка й зірка на аватарці — тебе видно в кожному чаті</li>
-        <li>🎨 5 акцентних кольорів інтерфейсу замість одного</li>
-        <li>🌅 Преміум-фони чату: захід, океан, ліс</li>
-        <li>📌 До {PREMIUM_PIN_LIMIT} закріплених чатів (у безкоштовних — {FREE_PIN_LIMIT})</li>
-        <li>😎 Емодзі-статус біля імені й текст статусу</li>
-        <li>🌈 Колір імені та градієнтний банер профілю</li>
-        <li>🎞 Анімована GIF-аватарка</li>
-        <li>💬 Реакції на повідомлення: 14 ексклюзивних і до {PREMIUM_REACTIONS_PER_MESSAGE} на повідомлення (замість {FREE_REACTIONS_PER_MESSAGE})</li>
-        <li>🖍 6 ексклюзивних кольорів аватара</li>
-        <li>✍️ «Про себе» до {PREMIUM_BIO_LIMIT} символів (замість {FREE_BIO_LIMIT})</li>
+        {features.map(({ icon: Icon, title, sub }) => (
+          <li key={title}>
+            <span className="premium-feature-icon"><Icon size={18} /></span>
+            <span className="premium-feature-text">
+              <b>{title}</b>
+              <small>{sub}</small>
+            </span>
+          </li>
+        ))}
       </ul>
 
       {user.isPremium && user.premiumUntil && (
@@ -1070,8 +1094,17 @@ function PremiumTab({ user }: TabProps) {
             <div className="plan-icon">{planIcons[plan.id] ?? "⭐"}</div>
             <div className="plan-label">{plan.label}</div>
             <div className="plan-price">{plan.price} 🥃</div>
+            <div className="plan-meta">
+              {plan.days > 30 ? (
+                <>
+                  {perMonth(plan)} 🥃/міс <span className="plan-save">−{saving(plan)}%</span>
+                </>
+              ) : (
+                "за місяць"
+              )}
+            </div>
             <button className="btn-primary" disabled={!!buying} onClick={() => buy(plan)}>
-              {buying === plan.id ? "Оформлення…" : "Оформити за ГРАМи"}
+              {buying === plan.id ? "Оформлення…" : user.isPremium ? "Продовжити" : "Оформити"}
             </button>
             {axiomaLinked && (
               <button className="btn-ghost" disabled={!!buying} onClick={() => buyWithAxioma(plan)}>

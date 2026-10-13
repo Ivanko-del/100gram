@@ -332,6 +332,8 @@ textarea {
 
 /* filter pills, like a folder bar */
 .chat-filters {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
   display: flex;
   gap: 4px;
   margin: 4px 12px 8px;
@@ -780,7 +782,7 @@ textarea {
   line-height: 1.3;
   color: var(--text-secondary);
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
   word-break: break-word;
@@ -1736,7 +1738,8 @@ textarea {
 
 .premium-hero p {
   margin: 0;
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  opacity: 0.8;
   font-size: 13.5px;
 }
 
@@ -1744,10 +1747,43 @@ textarea {
   list-style: none;
   padding: 0;
   margin: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 8px;
   font-size: 14px;
+}
+
+.premium-features li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.premium-feature-icon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffd76e;
+  background: rgba(255, 190, 90, 0.14);
+}
+
+.premium-feature-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.premium-feature-text small {
+  color: var(--text-secondary);
+  font-size: 12.5px;
 }
 
 .install-steps {
@@ -1766,9 +1802,24 @@ textarea {
 }
 
 .premium-plans {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  padding-top: 10px;
+}
+
+.plan-meta {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.plan-save {
+  color: #4cd98a;
+  font-weight: 700;
+}
+
+.premium-chip-active {
+  align-self: center;
 }
 
 .plan-card {
@@ -1999,6 +2050,8 @@ textarea {
    be scrolled out of sight and revealed by pulling the list down. */
 .chat-list-inner {
   min-height: calc(100% + 68px);
+  /* keep the last chat row clear of the floating "+" button */
+  padding-bottom: 96px;
 }
 
 .archive-row {
