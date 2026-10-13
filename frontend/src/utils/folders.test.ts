@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { FREE_FOLDER_LIMIT, PREMIUM_FOLDER_LIMIT } from "../constants";
+import { FREE_FOLDER_LIMIT, PREMIUM_FOLDER_LIMIT, TIER_LIMITS } from "../constants";
 import { folderLimit, folderTabId, makeFolder, toggleChatInFolder } from "./folders";
 
 describe("folders", () => {
   it("gives premium accounts more folders", () => {
-    expect(folderLimit(false)).toBe(FREE_FOLDER_LIMIT);
-    expect(folderLimit(true)).toBe(PREMIUM_FOLDER_LIMIT);
+    expect(folderLimit(null)).toBe(FREE_FOLDER_LIMIT);
+    expect(folderLimit("premium")).toBe(PREMIUM_FOLDER_LIMIT);
+    expect(folderLimit("max")).toBe(TIER_LIMITS.max.folders);
     expect(PREMIUM_FOLDER_LIMIT).toBeGreaterThan(FREE_FOLDER_LIMIT);
   });
 

@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DataError, getUserProfile, setGlobalMute, setUserBadge, startDirectChat, setUserBlocked } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
-import { BADGE_COLORS, PROFILE_BANNERS, isSiteAdmin } from "../constants";
+import { BADGE_COLORS, PROFILE_BANNERS, TIER_META, isSiteAdmin } from "../constants";
 import { User } from "../types";
 import Avatar from "./Avatar";
 import UserName from "./UserName";
@@ -112,7 +112,7 @@ export default function UserProfileModal({ uid, onClose }: Props) {
               <div className="profile-banner" style={{ background: PROFILE_BANNERS[profile.profileBanner] }} />
             )}
             <div className={`profile-card-identity ${profile.isPremium && profile.profileBanner ? "with-banner" : ""}`}>
-              <Avatar name={profile.displayName} color={profile.avatarColor} photoUrl={profile.avatarUrl} size={72} isPremium={profile.isPremium} />
+              <Avatar name={profile.displayName} color={profile.avatarColor} photoUrl={profile.avatarUrl} size={72} isPremium={profile.isPremium} tier={profile.premiumTier} />
               <div className="settings-profile-name">
                 <UserName
                   name={profile.displayName}
@@ -125,7 +125,7 @@ export default function UserProfileModal({ uid, onClose }: Props) {
               <div className="profile-badges">
                 {profile.isPremium && (
                   <div className="premium-chip">
-                    ⭐ Преміум{profile.premiumUntil ? ` до ${new Date(profile.premiumUntil).toLocaleDateString("uk-UA")}` : ""}
+                    {TIER_META[profile.premiumTier ?? "premium"].icon} {TIER_META[profile.premiumTier ?? "premium"].label}{profile.premiumUntil ? ` до ${new Date(profile.premiumUntil).toLocaleDateString("uk-UA")}` : ""}
                   </div>
                 )}
                 {profileIsSiteAdmin && profile.showAdminBadge && <div className="user-badge admin-site-badge">👑 Адміністратор</div>}

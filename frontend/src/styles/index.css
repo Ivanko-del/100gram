@@ -4005,3 +4005,51 @@ summary:focus-visible {
   gap: 8px;
   flex-wrap: wrap;
 }
+
+/* ---------- Subscription tiers ---------- */
+.tier-switch {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-input);
+  border-radius: 14px;
+}
+
+.tier-switch-btn {
+  flex: 1;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tier-switch-btn.active {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+.premium-hero-max {
+  background: linear-gradient(160deg, rgba(90, 210, 255, 0.16), rgba(150, 110, 255, 0.1) 55%, transparent);
+  border-color: rgba(110, 200, 255, 0.4);
+}
+
+.premium-hero-max h2 {
+  background: linear-gradient(90deg, #6fe3ff, #a98bff);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.avatar-wrap-max {
+  background: conic-gradient(from 180deg, #6fe3ff, #a98bff, #6fe3ff, #d8f6ff, #6fe3ff);
+  box-shadow: 0 0 10px rgba(110, 200, 255, 0.5);
+}
+
+.avatar-wrap-max .avatar-premium-badge {
+  background: linear-gradient(135deg, #6fe3ff, #a98bff);
+  box-shadow: 0 0 6px rgba(110, 200, 255, 0.6);
+}

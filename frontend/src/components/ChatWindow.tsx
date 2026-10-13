@@ -15,7 +15,7 @@ import {
   votePoll,
 } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
-import { FREE_REACTIONS_PER_MESSAGE, PREMIUM_REACTIONS_PER_MESSAGE, REACTIONS_PREMIUM, isSiteAdmin } from "../constants";
+import { REACTIONS_PREMIUM, isSiteAdmin, tierLimits } from "../constants";
 import { ChatMessage, ChatSummary } from "../types";
 import Avatar from "./Avatar";
 import UserName from "./UserName";
@@ -281,7 +281,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
       return;
     }
     setSendError(null);
-    const limit = user.isPremium ? PREMIUM_REACTIONS_PER_MESSAGE : FREE_REACTIONS_PER_MESSAGE;
+    const limit = tierLimits(user.premiumTier).reactions;
     toggleReaction(chat.id, message.id, user.id, emoji, mine, limit).catch((err) => setSendError(describeSendError(err)));
   }
 

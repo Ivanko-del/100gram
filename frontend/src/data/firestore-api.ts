@@ -37,10 +37,10 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
-import { AVATAR_COLORS, WELCOME_BONUS } from "../constants";
+import { AVATAR_COLORS, TIER_META, TIER_RANK, WELCOME_BONUS } from "../constants";
 import { clearChatLock } from "./chat-lock";
 import { OFFLINE_MESSAGE, isOfflineError, isOnline } from "../utils/offline";
-import { ChatFolder, ChatMessage, ChatSummary, PremiumPlan, PublicUser, Report, User, UserBadge, WalletTransaction } from "../types";
+import { ChatFolder, ChatMessage, ChatSummary, PremiumPlan, PremiumTier, PublicUser, Report, User, UserBadge, WalletTransaction } from "../types";
 import { ReportReason, clipReportText, getReportedIds, isReportReason, reportDocId, rememberReported } from "../utils/reports";
 
 export class DataError extends Error {}
@@ -196,6 +196,7 @@ export async function searchUserByPhone(phone: string, excludeUid: string): Prom
     avatarColor: u.avatarColor,
     avatarUrl: u.avatarUrl,
     isPremium: u.isPremium,
+    premiumTier: u.premiumTier ?? null,
   };
 }
 
@@ -281,6 +282,7 @@ function mapUser(snap: { id: string; data: () => Record<string, unknown> }): Use
     avatarColor: d.avatarColor as string,
     avatarUrl: (d.avatarUrl as string) ?? null,
     isPremium: isPremiumActive(d),
+    premiumTier: isPremiumActive(d) ? (d.premiumTier === "max" ? "max" : "premium") : null,
     premiumUntil: d.premiumUntil ? tsToIso(d.premiumUntil) : null,
     grams: (d.grams as number) ?? 0,
     mutedGlobally: !!d.mutedGlobally,
@@ -363,6 +365,7 @@ export async function searchUsers(queryText: string, excludeUid: string): Promis
         avatarColor: u.avatarColor,
         avatarUrl: u.avatarUrl,
         isPremium: u.isPremium,
+        premiumTier: u.premiumTier ?? null,
       };
     });
 }
@@ -1070,22 +1073,35 @@ export async function transferGrams(fromUid: string, fromUsername: string, toUse
   });
 }
 
+/** New `premiumUntil` / `premiumTier` after buying `plan`. Time stacks on top
+ * of what is left; buying a higher tier upgrades immediately, buying a lower
+ * tier over an active higher one is refused. */
+function nextPremium(data: { premiumUntil?: Timestamp | null; premiumTier?: string }, plan: PremiumPlan) {
+  const now = new Date();
+  const active = !!data.premiumUntil && data.premiumUntil.toDate() > now;
+  const current: PremiumTier | null = active ? (data.premiumTier === "max" ? "max" : "premium") : null;
+  if (current && TIER_RANK[current] > TIER_RANK[plan.tier]) {
+    throw new DataError(`У тебе вже активний ${TIER_META[current].label} — нижчий рівень купити не можна`);
+  }
+  const base = active ? data.premiumUntil!.toDate() : now;
+  return {
+    premiumUntil: Timestamp.fromDate(new Date(base.getTime() + plan.days * 24 * 60 * 60 * 1000)),
+    premiumTier: plan.tier,
+  };
+}
+
 export async function buyPremium(uid: string, plan: PremiumPlan) {
   return onlineOnly(async () => {
     await runTransaction(db, async (tx) => {
       const ref = doc(db, "users", uid);
       const snap = await tx.get(ref);
       if (!snap.exists()) throw new DataError("Помилка гаманця");
-      const data = snap.data() as { grams: number; premiumUntil: Timestamp | null };
+      const data = snap.data() as { grams: number; premiumUntil: Timestamp | null; premiumTier?: string };
       if (data.grams < plan.price) throw new DataError("Недостатньо ГРАМів");
 
-      const now = new Date();
-      const base = data.premiumUntil && data.premiumUntil.toDate() > now ? data.premiumUntil.toDate() : now;
-      const premiumUntil = new Date(base.getTime() + plan.days * 24 * 60 * 60 * 1000);
-
-      tx.update(ref, { grams: data.grams - plan.price, isPremium: true, premiumUntil: Timestamp.fromDate(premiumUntil) });
+      tx.update(ref, { grams: data.grams - plan.price, isPremium: true, ...nextPremium(data, plan) });
       const txRef = doc(collection(ref, "transactions"));
-      tx.set(txRef, { amount: -plan.price, type: "premium_purchase", note: `Преміум: ${plan.label}`, counterpart: null, counterpartUsername: null, createdAt: serverTimestamp() });
+      tx.set(txRef, { amount: -plan.price, type: "premium_purchase", note: `${TIER_META[plan.tier].label}: ${plan.label}`, counterpart: null, counterpartUsername: null, createdAt: serverTimestamp() });
     });
   });
 }
@@ -1120,18 +1136,14 @@ export async function grantPremiumFromAxioma(uid: string, plan: PremiumPlan): Pr
       const ref = doc(db, "users", uid);
       const snap = await tx.get(ref);
       if (!snap.exists()) throw new DataError("Помилка гаманця");
-      const data = snap.data() as { premiumUntil: Timestamp | null };
+      const data = snap.data() as { premiumUntil: Timestamp | null; premiumTier?: string };
 
-      const now = new Date();
-      const base = data.premiumUntil && data.premiumUntil.toDate() > now ? data.premiumUntil.toDate() : now;
-      const premiumUntil = new Date(base.getTime() + plan.days * 24 * 60 * 60 * 1000);
-
-      tx.update(ref, { isPremium: true, premiumUntil: Timestamp.fromDate(premiumUntil) });
+      tx.update(ref, { isPremium: true, ...nextPremium(data, plan) });
       const txRef = doc(collection(ref, "transactions"));
       tx.set(txRef, {
         amount: 0,
         type: "premium_purchase_axioma",
-        note: `Преміум карткою Аксіоми: ${plan.label}`,
+        note: `${TIER_META[plan.tier].label} карткою Аксіоми: ${plan.label}`,
         counterpart: null,
         counterpartUsername: null,
         createdAt: serverTimestamp(),

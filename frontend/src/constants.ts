@@ -1,4 +1,4 @@
-import { PremiumPlan } from "./types";
+import { PremiumPlan, PremiumTier } from "./types";
 
 export const WELCOME_BONUS = 500;
 
@@ -10,10 +10,29 @@ export const MIN_POLL_OPTIONS = 2;
 export const MAX_POLL_OPTIONS = 10;
 
 export const PREMIUM_PLANS: PremiumPlan[] = [
-  { id: "1m", label: "1 місяць", days: 30, price: 500 },
-  { id: "6m", label: "6 місяців", days: 180, price: 2400 },
-  { id: "12m", label: "12 місяців", days: 365, price: 4200 },
+  { id: "1m", tier: "premium", label: "1 місяць", days: 30, price: 500 },
+  { id: "6m", tier: "premium", label: "6 місяців", days: 180, price: 2400 },
+  { id: "12m", tier: "premium", label: "12 місяців", days: 365, price: 4200 },
 ];
+
+export const MAX_PLANS: PremiumPlan[] = [
+  { id: "max-1m", tier: "max", label: "1 місяць", days: 30, price: 900 },
+  { id: "max-6m", tier: "max", label: "6 місяців", days: 180, price: 4500 },
+  { id: "max-12m", tier: "max", label: "12 місяців", days: 365, price: 8000 },
+];
+
+export const PLANS_BY_TIER: Record<PremiumTier, PremiumPlan[]> = {
+  premium: PREMIUM_PLANS,
+  max: MAX_PLANS,
+};
+
+export const TIER_META: Record<PremiumTier, { label: string; icon: string }> = {
+  premium: { label: "Преміум", icon: "⭐" },
+  max: { label: "Макс", icon: "💎" },
+};
+
+/** Higher rank = higher tier; a lower tier can't be bought over a higher one. */
+export const TIER_RANK: Record<PremiumTier, number> = { premium: 1, max: 2 };
 
 /** What premium actually unlocks (keep the perks list in Settings honest). */
 export const FREE_PIN_LIMIT = 3;
@@ -67,4 +86,23 @@ export const SITE_ADMIN_USERNAME = "theivankoo";
 
 export function isSiteAdmin(username: string | undefined | null): boolean {
   return (username ?? "").toLowerCase() === SITE_ADMIN_USERNAME;
+}
+
+export interface TierLimits {
+  pins: number;
+  folders: number;
+  bio: number;
+  reactions: number;
+}
+
+/** Limits per subscription level (null = free). Single source of truth for
+ * both the enforcement and the perk lists in Settings. */
+export const TIER_LIMITS: Record<"free" | PremiumTier, TierLimits> = {
+  free: { pins: FREE_PIN_LIMIT, folders: FREE_FOLDER_LIMIT, bio: FREE_BIO_LIMIT, reactions: FREE_REACTIONS_PER_MESSAGE },
+  premium: { pins: PREMIUM_PIN_LIMIT, folders: PREMIUM_FOLDER_LIMIT, bio: PREMIUM_BIO_LIMIT, reactions: PREMIUM_REACTIONS_PER_MESSAGE },
+  max: { pins: 20, folders: 20, bio: 1000, reactions: 5 },
+};
+
+export function tierLimits(tier: PremiumTier | null | undefined): TierLimits {
+  return TIER_LIMITS[tier ?? "free"];
 }

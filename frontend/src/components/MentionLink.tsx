@@ -102,7 +102,7 @@ export default function MentionLink({ token, onOpen, onMissing }: Props) {
                   color={preview.user.avatarColor}
                   photoUrl={preview.user.avatarUrl}
                   size={40}
-                  isPremium={preview.user.isPremium}
+                  isPremium={preview.user.isPremium} tier={preview.user.premiumTier}
                 />
                 <div className="mention-card-body">
                   <div className="mention-card-name">

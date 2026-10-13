@@ -19,6 +19,8 @@ export interface User {
   avatarColor: string;
   avatarUrl?: string | null;
   isPremium: boolean;
+  /** Active subscription level; null when no active subscription */
+  premiumTier?: PremiumTier | null;
   premiumUntil?: string | null;
   grams: number;
   mutedGlobally?: boolean;
@@ -57,6 +59,7 @@ export interface PublicUser {
   avatarColor: string;
   avatarUrl?: string | null;
   isPremium: boolean;
+  premiumTier?: PremiumTier | null;
   lastSeenAt?: string;
   emojiStatus?: string | null;
   nameColor?: string | null;
@@ -134,8 +137,11 @@ export interface ChatMessage {
   forwardedFrom?: string | null;
 }
 
+export type PremiumTier = "premium" | "max";
+
 export interface PremiumPlan {
   id: string;
+  tier: PremiumTier;
   label: string;
   days: number;
   price: number;
