@@ -131,7 +131,7 @@ export default function MessageInput({ onSend, onSendImage, onSendPoll, onTyping
           <button className="btn-primary" type="submit" disabled={!gifUrl.trim()}>
             Надіслати
           </button>
-          <button type="button" className="btn-ghost" onClick={() => setShowGifInput(false)}>
+          <button type="button" className="btn-ghost" aria-label="Закрити поле GIF" onClick={() => setShowGifInput(false)}>
             <X size={16} />
           </button>
         </form>
@@ -141,7 +141,7 @@ export default function MessageInput({ onSend, onSendImage, onSendPoll, onTyping
           <input
             value={pollQuestion}
             onChange={(e) => setPollQuestion(e.target.value)}
-            placeholder="Питання опитування"
+            placeholder="Питання опитування" aria-label="Питання опитування"
             maxLength={200}
             autoFocus
           />
@@ -150,7 +150,7 @@ export default function MessageInput({ onSend, onSendImage, onSendPoll, onTyping
               <input
                 value={opt}
                 onChange={(e) => setPollOptions((prev) => prev.map((o, j) => (j === i ? e.target.value : o)))}
-                placeholder={`Варіант ${i + 1}`}
+                placeholder={`Варіант ${i + 1}`} aria-label={`Варіант ${i + 1}`}
                 maxLength={100}
               />
               {pollOptions.length > MIN_POLL_OPTIONS && (
@@ -188,7 +188,7 @@ export default function MessageInput({ onSend, onSendImage, onSendPoll, onTyping
         <button
           type="button"
           className="icon-btn message-media-btn"
-          title="Надіслати GIF за посиланням"
+          title="Надіслати GIF за посиланням" aria-label="Надіслати GIF за посиланням"
           disabled={disabled}
           onClick={() => setShowGifInput((v) => !v)}
         >
@@ -198,7 +198,7 @@ export default function MessageInput({ onSend, onSendImage, onSendPoll, onTyping
           <button
             type="button"
             className="icon-btn message-media-btn"
-            title="Створити опитування"
+            title="Створити опитування" aria-label="Створити опитування"
             disabled={disabled}
             onClick={() => setShowPollForm((v) => !v)}
           >
@@ -209,7 +209,7 @@ export default function MessageInput({ onSend, onSendImage, onSendPoll, onTyping
           ref={textareaRef}
           className="message-input"
           value={value}
-          placeholder="Написати повідомлення…"
+          placeholder="Написати повідомлення…" aria-label="Повідомлення"
           rows={1}
           maxLength={MAX_MESSAGE_LENGTH}
           onChange={(e) => {
@@ -219,7 +219,7 @@ export default function MessageInput({ onSend, onSendImage, onSendPoll, onTyping
           onKeyDown={onKeyDown}
           disabled={disabled}
         />
-        <button className="send-btn" type="submit" disabled={disabled || !value.trim()}>
+        <button className="send-btn" type="submit" aria-label="Надіслати" disabled={disabled || !value.trim()}>
           <Send size={18} />
         </button>
       </form>

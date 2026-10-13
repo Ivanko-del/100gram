@@ -172,7 +172,7 @@ export default function NewChatModal({ contacts = [], onClose, onCreated }: Prop
             </button>
           </div>
 
-          {error && <div className="auth-error">{error}</div>}
+          {error && <div className="auth-error" role="alert">{error}</div>}
 
           {q.length >= 2 && (
             <>
@@ -289,7 +289,7 @@ export default function NewChatModal({ contacts = [], onClose, onCreated }: Prop
             </div>
           )}
 
-          {error && <div className="auth-error">{error}</div>}
+          {error && <div className="auth-error" role="alert">{error}</div>}
 
           <button className="btn-primary" type="submit" disabled={creating || !name.trim()}>
             {creating ? "Створення…" : `Створити ${mode === "channel" ? "канал" : "групу"}`}

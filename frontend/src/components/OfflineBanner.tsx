@@ -6,7 +6,7 @@ export default function OfflineBanner() {
   const online = useOnlineStatus();
   if (online) return null;
   return (
-    <div className="offline-banner" role="status">
+    <div className="offline-banner" role="status" aria-live="polite">
       <WifiOff size={14} className="inline-icon" /> Немає з'єднання
     </div>
   );

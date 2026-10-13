@@ -234,7 +234,7 @@ export default function SettingsPage() {
             <NavRow icon={<Lightbulb size={18} />} color="#8e6cf0" label="Можливості 100 ГРАМ" active={tab === "features"} onClick={() => openTab("features")} />
             <NavRow icon={<ShieldCheck size={18} />} color="#4cb05a" label="Політика конфіденційності" active={tab === "policy"} onClick={() => openTab("policy")} />
           </div>
-          {support.error && <div className="auth-error">{support.error}</div>}
+          {support.error && <div className="auth-error" role="alert">{support.error}</div>}
 
           <div className="settings-group">
             <NavRow icon={<LogOut size={18} />} color="#e5546a" label="Вийти" danger onClick={() => logout()} />
@@ -415,7 +415,7 @@ function ProfileTab({ user }: TabProps) {
           )}
         </div>
       </div>
-      {photoError && <div className="auth-error">{photoError}</div>}
+      {photoError && <div className="auth-error" role="alert">{photoError}</div>}
 
       <label>
         Ім'я
@@ -472,11 +472,11 @@ function ProfileTab({ user }: TabProps) {
       <fieldset className="premium-fieldset" disabled={!user.isPremium}>
         <label>Емодзі-статус біля імені</label>
         <div className="emoji-grid">
-          <button type="button" className={`emoji-cell ${!emojiStatus ? "selected" : ""}`} onClick={() => setEmojiStatus("")}>
+          <button type="button" aria-label="Без емодзі-статусу" aria-pressed={!emojiStatus} className={`emoji-cell ${!emojiStatus ? "selected" : ""}`} onClick={() => setEmojiStatus("")}>
             ∅
           </button>
           {STATUS_EMOJIS.map((e) => (
-            <button type="button" key={e} className={`emoji-cell ${emojiStatus === e ? "selected" : ""}`} onClick={() => setEmojiStatus(e)}>
+            <button type="button" key={e} aria-label={`Емодзі-статус ${e}`} aria-pressed={emojiStatus === e} className={`emoji-cell ${emojiStatus === e ? "selected" : ""}`} onClick={() => setEmojiStatus(e)}>
               {e}
             </button>
           ))}
@@ -489,14 +489,14 @@ function ProfileTab({ user }: TabProps) {
 
         <label>Колір імені в чатах</label>
         <div className="color-swatches">
-          <button type="button" className={`swatch swatch-none ${!nameColor ? "selected" : ""}`} onClick={() => setNameColor("")}>
+          <button type="button" aria-label="Без кольору імені" aria-pressed={!nameColor} className={`swatch swatch-none ${!nameColor ? "selected" : ""}`} onClick={() => setNameColor("")}>
             ∅
           </button>
           {NAME_COLORS.map((c) => (
             <button
               type="button"
               key={c}
-              className={`swatch ${nameColor === c ? "selected" : ""}`}
+              aria-label={`Колір імені ${c}`} aria-pressed={nameColor === c} className={`swatch ${nameColor === c ? "selected" : ""}`}
               style={{ backgroundColor: c }}
               onClick={() => setNameColor(c)}
             />
@@ -532,7 +532,7 @@ function ProfileTab({ user }: TabProps) {
           </button>
         </>
       )}
-      {error && <div className="auth-error">{error}</div>}
+      {error && <div className="auth-error" role="alert">{error}</div>}
       <button className="btn-primary" type="submit" disabled={saving}>
         {saving ? "Збереження…" : saved ? "Збережено ✓" : "Зберегти"}
       </button>
@@ -761,7 +761,7 @@ function PrivacyTab({ user }: TabProps) {
         />
       </label>
       <p className="settings-hint">Замість точного часу співрозмовники бачитимуть «був(ла) нещодавно».</p>
-      {error && <div className="auth-error">{error}</div>}
+      {error && <div className="auth-error" role="alert">{error}</div>}
 
       <BlockedUsers user={user} />
 
@@ -859,7 +859,7 @@ function ChatLockSettings({ user }: TabProps) {
           : "Пароль ще не задано — з'явиться, коли вперше заблокуєш чи приховаєш чат."}
       </p>
       {note && <div className="auth-success">{note}</div>}
-      {error && <div className="auth-error">{error}</div>}
+      {error && <div className="auth-error" role="alert">{error}</div>}
 
       <div className="phone-section-actions">
         <button
@@ -901,7 +901,7 @@ function ChatLockSettings({ user }: TabProps) {
 
       {gate && !unlocked && (
         <div className="modal-overlay" onClick={() => setGate(null)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-card" role="dialog" aria-modal="true" aria-label="Розблокувати чати" onClick={(e) => e.stopPropagation()}>
             <LockPrompt onCancel={() => setGate(null)} />
           </div>
         </div>
@@ -1066,8 +1066,8 @@ function WalletTab({ user }: TabProps) {
           Повідомлення (необов'язково)
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="За каву ☕" maxLength={120} />
         </label>
-        {error && <div className="auth-error">{error}</div>}
-        {success && <div className="auth-success">{success}</div>}
+        {error && <div className="auth-error" role="alert">{error}</div>}
+        {success && <div className="auth-success" role="status">{success}</div>}
         <button className="btn-primary" type="submit" disabled={sending || !recipient}>
           {sending ? "Надсилання…" : "Переказати"}
         </button>
@@ -1185,8 +1185,8 @@ function PremiumTab({ user }: TabProps) {
           👑 Активний до {new Date(user.premiumUntil).toLocaleDateString("uk-UA")}
         </div>
       )}
-      {error && <div className="auth-error">{error}</div>}
-      {success && <div className="auth-success">{success}</div>}
+      {error && <div className="auth-error" role="alert">{error}</div>}
+      {success && <div className="auth-success" role="status">{success}</div>}
 
       <div className="premium-plans">
         {PREMIUM_PLANS.map((plan) => (
@@ -1305,7 +1305,7 @@ function PhoneSection({ user }: TabProps) {
           <p className="settings-hint">
             Номер можна просто зберегти, а можна підтвердити SMS-кодом — тоді працює вхід за номером.
           </p>
-          {error && <div className="auth-error">{error}</div>}
+          {error && <div className="auth-error" role="alert">{error}</div>}
           <div className="phone-section-actions">
             <button type="button" className="btn-primary" onClick={saveUnverified} disabled={busy || !digits}>
               Зберегти
@@ -1326,7 +1326,7 @@ function PhoneSection({ user }: TabProps) {
             {user.phone ? formatPhone(user.phone) : "—"}{" "}
             <span className={verified ? "phone-badge ok" : "phone-badge"}>{verified ? "✓ підтверджено" : "не підтверджено"}</span>
           </div>
-          {error && <div className="auth-error">{error}</div>}
+          {error && <div className="auth-error" role="alert">{error}</div>}
           <div className="phone-section-actions">
             {!verified && (
               <button type="button" className="btn-primary" onClick={sendCode} disabled={busy}>
@@ -1393,7 +1393,7 @@ function ReportsTab() {
   return (
     <div className="settings-panel">
       <h2>🚩 Скарги</h2>
-      {error && <div className="auth-error">{error}</div>}
+      {error && <div className="auth-error" role="alert">{error}</div>}
       {!reports && !error && <p className="settings-hint">Завантаження…</p>}
       {reports && reports.length === 0 && <p className="settings-hint">Відкритих скарг немає 🎉</p>}
       {reports?.map((r) => (
@@ -1505,7 +1505,7 @@ function AccountTab({ user }: TabProps) {
           <button className="btn-ghost" type="button" onClick={support.open} disabled={support.starting}>
             {support.starting ? "Відкриття…" : "🆘 Підтримка"}
           </button>
-          {support.error && <div className="auth-error">{support.error}</div>}
+          {support.error && <div className="auth-error" role="alert">{support.error}</div>}
         </div>
       )}
 
@@ -1541,7 +1541,7 @@ function AccountTab({ user }: TabProps) {
               autoComplete="new-password"
             />
           </label>
-          {pwError && <div className="auth-error">{pwError}</div>}
+          {pwError && <div className="auth-error" role="alert">{pwError}</div>}
           <button className="btn-primary" type="submit" disabled={pwSaving || !currentPassword || !newPassword}>
             {pwSaving ? "Збереження…" : pwSaved ? "Пароль змінено ✓" : "Змінити пароль"}
           </button>
@@ -1568,7 +1568,7 @@ function AccountTab({ user }: TabProps) {
                 autoComplete="current-password"
               />
             </label>
-            {deleteError && <div className="auth-error">{deleteError}</div>}
+            {deleteError && <div className="auth-error" role="alert">{deleteError}</div>}
             <div style={{ display: "flex", gap: 10 }}>
               <button className="btn-danger" type="submit" disabled={deleting || !deletePassword}>
                 {deleting ? "Видалення…" : "Так, видалити назавжди"}

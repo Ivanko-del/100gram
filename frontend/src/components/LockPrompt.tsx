@@ -36,8 +36,9 @@ export default function LockPrompt({ title = "Введи пароль", onCancel
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder="Пароль на чати"
+        aria-label="Пароль на чати"
       />
-      {error && <div className="auth-error">{error}</div>}
+      {error && <div className="auth-error" role="alert">{error}</div>}
       <button className="btn-primary" type="submit" disabled={busy || !password}>
         {busy ? "Перевірка…" : "Відкрити"}
       </button>

@@ -11,7 +11,7 @@ interface Props {
 export default function ForwardModal({ chats, onPick, onClose }: Props) {
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" role="dialog" aria-modal="true" aria-label="Переслати повідомлення" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>Переслати в…</h2>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Закрити">

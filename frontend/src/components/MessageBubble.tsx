@@ -141,13 +141,13 @@ export default function MessageBubble({
             <img
               className="message-image"
               src={message.content}
-              alt=""
+              alt="Фото"
               loading="lazy"
               onClick={() => setLightboxOpen(true)}
             />
             {lightboxOpen &&
               createPortal(
-                <div className="lightbox-overlay" onClick={() => setLightboxOpen(false)}>
+                <div className="lightbox-overlay" role="dialog" aria-modal="true" aria-label="Перегляд фото" onClick={() => setLightboxOpen(false)}>
                   <button
                     type="button"
                     className="lightbox-close"
@@ -178,7 +178,7 @@ export default function MessageBubble({
               setEditing(false);
             }}
           >
-            <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} maxLength={MAX_MESSAGE_LENGTH} autoFocus />
+            <textarea aria-label="Редагувати повідомлення" value={draft} onChange={(e) => setDraft(e.target.value)} rows={2} maxLength={MAX_MESSAGE_LENGTH} autoFocus />
             <div className="message-edit-actions">
               <button type="submit" className="btn-primary">Зберегти</button>
               <button type="button" className="btn-ghost" onClick={() => setEditing(false)}>Скасувати</button>
@@ -200,6 +200,7 @@ export default function MessageBubble({
                 key={emoji}
                 className={`reaction-chip ${myUid && uids.includes(myUid) ? "mine" : ""}`}
                 onClick={() => onReact?.(message, emoji)}
+                aria-label={`Реакція ${emoji}: ${uids.length}`}
               >
                 {emoji} <span>{uids.length}</span>
               </button>
@@ -211,12 +212,12 @@ export default function MessageBubble({
           {isOwn && peerReadAt !== undefined && <MessageTicks message={message} peerReadAt={peerReadAt} peerDeliveredAt={peerDeliveredAt} />}
         </div>
         {onReact && (
-          <button type="button" className="message-react-btn" onClick={() => { setPicking((v) => !v); setMenuOpen(false); }} title="Реакція">
+          <button type="button" className="message-react-btn" onClick={() => { setPicking((v) => !v); setMenuOpen(false); }} title="Реакція" aria-label="Додати реакцію">
             <SmilePlus size={14} />
           </button>
         )}
         {(onReply || onForward || onEdit || canPin || (onReport && !isOwn)) && (
-          <button type="button" className="message-react-btn message-more-btn" onClick={() => { setMenuOpen((v) => !v); setPicking(false); }} title="Дії">
+          <button type="button" className="message-react-btn message-more-btn" onClick={() => { setMenuOpen((v) => !v); setPicking(false); }} title="Дії" aria-label="Дії з повідомленням">
             <MoreHorizontal size={14} />
           </button>
         )}

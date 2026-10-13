@@ -309,7 +309,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
             <input
               ref={searchRef}
               className="sidebar-search"
-              placeholder="Пошук чатів або @username"
+              placeholder="Пошук чатів або @username" aria-label="Пошук чатів або @username"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -579,7 +579,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
 
       {unlockThen && !unlocked && (
         <div className="modal-overlay" onClick={() => setUnlockThen(null)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-card" role="dialog" aria-modal="true" aria-label="Розблокувати чати" onClick={(e) => e.stopPropagation()}>
             <LockPrompt onCancel={() => setUnlockThen(null)} />
           </div>
         </div>
@@ -587,7 +587,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
 
       {menuChat && user && (
         <div className="modal-overlay" onClick={() => setMenuChat(null)}>
-          <div className="modal-card chat-actions" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-card chat-actions" role="dialog" aria-modal="true" aria-label="Дії з чатом" onClick={(e) => e.stopPropagation()}>
             <div className="chat-actions-title">{menuChat.name}</div>
             {!archived.includes(menuChat.id) && (
               <button
@@ -671,7 +671,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
 
       {confirmDelete && user && (
         <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
-          <div className="modal-card chat-actions" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-card chat-actions" role="dialog" aria-modal="true" aria-label="Видалити чат" onClick={(e) => e.stopPropagation()}>
             <div className="chat-actions-title">Видалити «{confirmDelete.name}»?</div>
             <p className="settings-hint">
               Чат зникне лише в тебе. В інших учасників він залишиться, а тобі повернеться, коли там з'явиться нове

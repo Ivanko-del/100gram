@@ -391,7 +391,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
             autoFocus
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Пошук у цьому чаті"
+            placeholder="Пошук у цьому чаті" aria-label="Пошук у цьому чаті"
           />
           {query && <span className="settings-hint">{shownMessages.length}</span>}
         </div>
@@ -458,7 +458,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
         <div ref={bottomRef} />
       </div>
 
-      {sendError && <div className="auth-error chat-send-error">{sendError}</div>}
+      {sendError && <div className="auth-error chat-send-error" role="status" aria-live="polite">{sendError}</div>}
 
       {reportMsg && (
         <ReportModal

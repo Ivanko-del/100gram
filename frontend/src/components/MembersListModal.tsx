@@ -222,7 +222,7 @@ export default function MembersListModal({ chat, onClose, onSelectMember, onLeft
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" role="dialog" aria-modal="true" aria-label="Учасники чату" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{chat.isChannel ? "Підписники" : "Учасники"} ({chat.members.length})</h2>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Закрити">

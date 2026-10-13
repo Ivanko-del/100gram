@@ -47,7 +47,7 @@ export default function ReportModal({ targetUid, targetName, message, onClose }:
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" role="dialog" aria-modal="true" aria-label="Скарга" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>🚩 Скарга</h2>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Закрити">
@@ -81,7 +81,7 @@ export default function ReportModal({ targetUid, targetName, message, onClose }:
               Коментар (необов'язково)
               <textarea value={comment} onChange={(e) => setComment(e.target.value)} maxLength={REPORT_TEXT_LIMIT} rows={3} />
             </label>
-            {error && <div className="auth-error">{error}</div>}
+            {error && <div className="auth-error" role="alert">{error}</div>}
             <button className="btn-primary" type="submit" disabled={sending}>
               {sending ? "Надсилання…" : "Надіслати скаргу"}
             </button>

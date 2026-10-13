@@ -95,7 +95,7 @@ export default function UserProfileModal({ uid, onClose }: Props) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card profile-card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card profile-card" role="dialog" aria-modal="true" aria-label="Профіль" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>Профіль</h2>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Закрити">
