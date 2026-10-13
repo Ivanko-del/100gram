@@ -15,7 +15,7 @@ import {
   votePoll,
 } from "../data/firestore-api";
 import { useAuth } from "../context/AuthContext";
-import { FREE_REACTIONS_PER_MESSAGE, PREMIUM_REACTIONS_PER_MESSAGE, REACTIONS_PREMIUM, isSiteAdmin } from "../constants";
+import { REACTIONS_PREMIUM, isStaff, tierLimits } from "../constants";
 import { ChatMessage, ChatSummary } from "../types";
 import Avatar from "./Avatar";
 import UserName from "./UserName";
@@ -281,7 +281,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
       return;
     }
     setSendError(null);
-    const limit = user.isPremium ? PREMIUM_REACTIONS_PER_MESSAGE : FREE_REACTIONS_PER_MESSAGE;
+    const limit = tierLimits(user.premiumTier).reactions;
     toggleReaction(chat.id, message.id, user.id, emoji, mine, limit).catch((err) => setSendError(describeSendError(err)));
   }
 
@@ -309,7 +309,7 @@ export default function ChatWindow({ chat, chats = [] }: Props) {
   const isGroup = chat.isGroup;
   const isChannel = chat.isChannel;
   const isAdmin = !!user && chat.adminUids.includes(user.id);
-  const isAppAdmin = isSiteAdmin(user?.username);
+  const isAppAdmin = isStaff(user?.username, user?.siteRole);
   // Pinning: any member in a direct chat, admins only in a group/channel -
   // mirrored in firestore.rules' isPinChange() check.
   const canPin = !isGroup || isAdmin;

@@ -356,7 +356,7 @@ export default function MembersListModal({ chat, onClose, onSelectMember, onLeft
                     disabled={inviting}
                     onClick={() => invite(u)}
                   >
-                    <Avatar name={u.displayName} color={u.avatarColor} photoUrl={u.avatarUrl} isPremium={u.isPremium} size={36} />
+                    <Avatar name={u.displayName} color={u.avatarColor} photoUrl={u.avatarUrl} isPremium={u.isPremium} tier={u.premiumTier} size={36} />
                     <div className="chat-list-item-body">
                       <div className="chat-list-item-top">
                         <span className="chat-name">{u.displayName}</span>

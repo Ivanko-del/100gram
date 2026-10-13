@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { FREE_FOLDER_LIMIT, FREE_PIN_LIMIT, PREMIUM_FOLDER_LIMIT, PREMIUM_PIN_LIMIT, WELCOME_BONUS } from "../../constants";
+import { TIER_LIMITS, WELCOME_BONUS } from "../../constants";
 
 function Faq({ q, children }: { q: string; children: ReactNode }) {
   return (
@@ -34,8 +34,8 @@ export function FaqTab() {
         Це може адмін: відкрий список учасників групи чи каналу й обери «Приватний» або «Публічний».
       </Faq>
       <Faq q="Як закріпити, заархівувати чи сховати чат?">
-        Утримуй чат у списку (на ПК — права кнопка миші). Закріпити можна до {FREE_PIN_LIMIT} чатів, з преміумом — до{" "}
-        {PREMIUM_PIN_LIMIT}. Архів ховається над списком, його відкриває потяг униз або меню ☰.
+        Утримуй чат у списку (на ПК — права кнопка миші). Закріпити можна до {TIER_LIMITS.free.pins} чатів, з преміумом — до{" "}
+        {TIER_LIMITS.premium.pins}, з Максом — до {TIER_LIMITS.max.pins}. Архів ховається над списком, його відкриває потяг униз або меню ☰.
       </Faq>
       <Faq q="Як поставити пароль на чат?">
         Утримуй чат у списку й обери «Заблокувати» або «Сховати». Пароль на чати можна змінити чи скинути в
@@ -43,7 +43,7 @@ export function FaqTab() {
       </Faq>
       <Faq q="Як зібрати чати в папки?">
         Налаштування → «Папки для чатів». Папки з’являються вкладками над списком чатів. Безкоштовно доступно{" "}
-        {FREE_FOLDER_LIMIT} папки, з преміумом — {PREMIUM_FOLDER_LIMIT}.
+        {TIER_LIMITS.free.folders} папки, з преміумом — {TIER_LIMITS.premium.folders}, з Максом — {TIER_LIMITS.max.folders}.
       </Faq>
       <Faq q="Що таке ГРАМи?">
         Внутрішня ігрова валюта. {WELCOME_BONUS} ГРАМ дарується при реєстрації, ними можна переказувати друзям і

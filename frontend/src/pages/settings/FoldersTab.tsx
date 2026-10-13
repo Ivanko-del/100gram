@@ -8,7 +8,7 @@ import { folderLimit, makeFolder, toggleChatInFolder } from "../../utils/folders
 export default function FoldersTab({ user }: { user: User }) {
   const chats = useMyChats(user.id);
   const folders = user.chatFolders ?? [];
-  const limit = folderLimit(user.isPremium);
+  const limit = folderLimit(user.premiumTier);
   const [draft, setDraft] = useState<ChatFolder | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -117,7 +117,7 @@ export default function FoldersTab({ user }: { user: User }) {
             ➕ Нова папка
           </button>
           <p className="settings-hint">
-            {folders.length}/{limit} папок{!user.isPremium && ` · з преміумом — до ${folderLimit(true)}`}
+            {folders.length}/{limit} папок{user.premiumTier !== "max" && ` · з ${user.premiumTier ? "Максом" : "преміумом"} — до ${folderLimit(user.premiumTier ? "max" : "premium")}`}
           </p>
         </>
       )}

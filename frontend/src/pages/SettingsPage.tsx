@@ -24,7 +24,9 @@ import {
   LogOut,
   MessageSquare,
   Palette,
+  Coins,
   Film,
+  Gem,
   Image as ImageIcon,
   MessageCircle,
   PenLine,
@@ -65,19 +67,21 @@ import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import { compressImageToDataUrl } from "../utils/image";
 import {
   AVATAR_COLORS,
-  FREE_BIO_LIMIT,
-  FREE_PIN_LIMIT,
   NAME_COLORS,
   PROFILE_BANNERS,
   STATUS_EMOJIS,
   STATUS_TEXT_LIMIT,
   PREMIUM_AVATAR_COLORS,
-  PREMIUM_BIO_LIMIT,
-  PREMIUM_PIN_LIMIT,
-  PREMIUM_REACTIONS_PER_MESSAGE,
-  FREE_REACTIONS_PER_MESSAGE,
-  PREMIUM_PLANS, SITE_ADMIN_USERNAME, isSiteAdmin } from "../constants";
-import { PremiumPlan, PublicUser, Report, User, WalletTransaction } from "../types";
+  PLANS_BY_TIER,
+  SITE_ADMIN_USERNAME,
+  TIER_LIMITS,
+  TIER_META,
+  TIER_RANK,
+  isSiteAdmin,
+  isStaff,
+  tierLimits,
+} from "../constants";
+import { PremiumPlan, PremiumTier, PublicUser, Report, User, WalletTransaction } from "../types";
 import { REPORT_REASON_LABELS } from "../utils/reports";
 import Avatar from "../components/Avatar";
 import AxiomaCard from "../components/AxiomaCard";
@@ -186,7 +190,7 @@ export default function SettingsPage() {
         <div className="settings-hero">
           <div className="settings-hero-avatar">
             <button type="button" className="settings-hero-avatar-btn" onClick={() => setShowOwnProfile(true)} aria-label="Мій профіль">
-              <Avatar name={user.displayName} color={user.avatarColor} photoUrl={user.avatarUrl} size={96} isPremium={user.isPremium} />
+              <Avatar name={user.displayName} color={user.avatarColor} photoUrl={user.avatarUrl} size={96} isPremium={user.isPremium} tier={user.premiumTier} />
             </button>
             <button type="button" className="settings-hero-camera" onClick={() => openTab("profile")} aria-label="Змінити фото">
               <Camera size={18} />
@@ -223,7 +227,7 @@ export default function SettingsPage() {
             <NavRow icon={<Gift size={18} />} color="#f0842c" label="Надіслати подарунок" onClick={() => openTab("wallet")} />
           </div>
 
-          {isSiteAdmin(user.username) && (
+          {isStaff(user.username, user.siteRole) && (
             <div className="settings-group">
               <NavRow icon={<Flag size={18} />} color="#e5546a" label="🚩 Скарги" active={tab === "reports"} onClick={() => openTab("reports")} />
             </div>
@@ -269,7 +273,7 @@ export default function SettingsPage() {
         {tab === "wallet" && <WalletTab user={user} />}
         {tab === "premium" && <PremiumTab user={user} />}
         {tab === "account" && <AccountTab user={user} />}
-        {tab === "reports" && isSiteAdmin(user.username) && <ReportsTab />}
+        {tab === "reports" && isStaff(user.username, user.siteRole) && <ReportsTab />}
       </main>
     </div>
   );
@@ -411,7 +415,7 @@ function ProfileTab({ user }: TabProps) {
       <h2>Профіль</h2>
 
       <div className="avatar-photo-picker">
-        <Avatar name={displayName || "?"} color={avatarColor} photoUrl={avatarUrl} size={88} isPremium={user.isPremium} />
+        <Avatar name={displayName || "?"} color={avatarColor} photoUrl={avatarUrl} size={88} isPremium={user.isPremium} tier={user.premiumTier} />
         <div className="avatar-photo-actions">
           <label className="btn-ghost avatar-upload-btn">
             {uploadingPhoto ? "Завантаження…" : avatarUrl ? "Змінити фото" : "Додати фото"}
@@ -435,10 +439,14 @@ function ProfileTab({ user }: TabProps) {
         <textarea
           value={bio}
           onChange={(e) => setBio(e.target.value)}
-          maxLength={user.isPremium ? PREMIUM_BIO_LIMIT : FREE_BIO_LIMIT}
+          maxLength={tierLimits(user.premiumTier).bio}
           rows={3}
         />
-        {!user.isPremium && <span className="settings-hint">З преміумом — до {PREMIUM_BIO_LIMIT} символів</span>}
+        {user.premiumTier !== "max" && (
+          <span className="settings-hint">
+            {user.premiumTier ? `З Максом — до ${TIER_LIMITS.max.bio} символів` : `З преміумом — до ${TIER_LIMITS.premium.bio} символів`}
+          </span>
+        )}
       </label>
       <label>
         Дата народження <span className="settings-hint">(необов'язково)</span>
@@ -1001,7 +1009,7 @@ function WalletTab({ user }: TabProps) {
 
         {recipient ? (
           <div className="transfer-recipient-chip">
-            <Avatar name={recipient.displayName} color={recipient.avatarColor} photoUrl={recipient.avatarUrl} size={32} isPremium={recipient.isPremium} />
+            <Avatar name={recipient.displayName} color={recipient.avatarColor} photoUrl={recipient.avatarUrl} size={32} isPremium={recipient.isPremium} tier={recipient.premiumTier} />
             <div>
               <div className="chat-name">{recipient.displayName}</div>
               <div className="chat-list-item-bottom">@{recipient.username}</div>
@@ -1037,7 +1045,7 @@ function WalletTab({ user }: TabProps) {
                   setResults([]);
                 }}
               >
-                <Avatar name={u.displayName} color={u.avatarColor} photoUrl={u.avatarUrl} isPremium={u.isPremium} />
+                <Avatar name={u.displayName} color={u.avatarColor} photoUrl={u.avatarUrl} isPremium={u.isPremium} tier={u.premiumTier} />
                 <div className="chat-list-item-body">
                   <div className="chat-list-item-top">
                     <span className="chat-name">{u.displayName}</span>
@@ -1165,31 +1173,80 @@ function PremiumTab({ user }: TabProps) {
     }
   }
 
-  const bestValueId = PREMIUM_PLANS[PREMIUM_PLANS.length - 1]?.id;
-  const planIcons: Record<string, string> = { "1m": "🚀", "6m": "💎", "12m": "👑" };
-  const basePlan = PREMIUM_PLANS[0];
+  const [tier, setTier] = useState<PremiumTier>(user.premiumTier ?? "premium");
+  const plans = PLANS_BY_TIER[tier];
+  const limits = TIER_LIMITS[tier];
+  const free = TIER_LIMITS.free;
+  const bestValueId = plans[plans.length - 1]?.id;
+  const planIcons = ["🚀", "💎", "👑"];
+  const basePlan = plans[0];
   const perMonth = (plan: PremiumPlan) => Math.round(plan.price / (plan.days / 30));
   const saving = (plan: PremiumPlan) =>
     basePlan ? Math.round((1 - perMonth(plan) / perMonth(basePlan)) * 100) : 0;
-  const features = [
+  // a lower tier can't be bought over an active higher one (also guards the
+  // Аксіома flow, where the card is charged before the tier is written)
+  const downgrade = !!user.premiumTier && TIER_RANK[user.premiumTier] > TIER_RANK[tier];
+  const buyLabel = downgrade
+    ? `Активний ${TIER_META[user.premiumTier!].label}`
+    : user.premiumTier === tier
+      ? "Продовжити"
+      : user.premiumTier
+        ? `Перейти на ${TIER_META[tier].label}`
+        : "Оформити";
+
+  const baseFeatures = [
     { icon: Star, title: "Золота рамка й зірка", sub: "Тебе видно в кожному чаті" },
     { icon: Palette, title: "5 акцентних кольорів", sub: "Замість одного" },
     { icon: ImageIcon, title: "Преміум-фони чату", sub: "Захід, океан, ліс" },
-    { icon: Pin, title: `До ${PREMIUM_PIN_LIMIT} закріплених чатів`, sub: `У безкоштовних — ${FREE_PIN_LIMIT}` },
     { icon: Smile, title: "Емодзі-статус", sub: "Біля імені + текст статусу" },
     { icon: Sparkles, title: "Колір імені й банер профілю", sub: "Градієнтний банер" },
     { icon: Film, title: "GIF-аватарка", sub: "Анімована" },
-    { icon: MessageCircle, title: "14 ексклюзивних реакцій", sub: `До ${PREMIUM_REACTIONS_PER_MESSAGE} на повідомлення (замість ${FREE_REACTIONS_PER_MESSAGE})` },
     { icon: Brush, title: "6 кольорів аватара", sub: "Ексклюзивні" },
-    { icon: PenLine, title: `«Про себе» до ${PREMIUM_BIO_LIMIT} символів`, sub: `Замість ${FREE_BIO_LIMIT}` },
+    { icon: MessageCircle, title: "14 ексклюзивних реакцій", sub: "Недоступні безкоштовним" },
   ];
+  const limitFeatures = [
+    { icon: Pin, title: `До ${limits.pins} закріплених чатів`, sub: `У безкоштовних — ${free.pins}` },
+    { icon: FolderOpen, title: `До ${limits.folders} папок`, sub: `У безкоштовних — ${free.folders}` },
+    { icon: MessageCircle, title: `До ${limits.reactions} реакцій на повідомлення`, sub: `Замість ${free.reactions}` },
+    { icon: PenLine, title: `«Про себе» до ${limits.bio} символів`, sub: `Замість ${free.bio}` },
+  ];
+  const meta = TIER_META[tier];
+  const features =
+    tier === "premium"
+      ? [...baseFeatures, ...limitFeatures]
+      : tier === "max"
+        ? [
+            { icon: Gem, title: "Діамантова рамка й значок 💎", sub: "Відрізняє Макс від звичайного преміуму" },
+            { icon: Crown, title: "Усе з Преміуму", sub: "Кольори, фони, статус, GIF-аватарка, банер" },
+            ...limitFeatures,
+          ]
+        : [
+            { icon: Gem, title: `Значок ${meta.icon} і власна рамка`, sub: `${meta.label}: видно в кожному чаті` },
+            { icon: Coins, title: `Кешбек ${meta.cashback}% ГРАМами`, sub: "При поповненні ГРАМів карткою Аксіоми" },
+            { icon: Crown, title: "Усе з Преміуму", sub: "Кольори, фони, статус, GIF-аватарка, банер, ліміти Преміуму" },
+          ];
 
   return (
     <div className="settings-panel">
-      <div className="premium-hero">
-        <div className="premium-hero-crown">👑</div>
-        <h2>100 ГРАМ Преміум</h2>
-        <p>Виділяйся, отримуй бонуси і підтримуй розробку застосунку</p>
+      <div className={`premium-hero premium-hero-${tier}`}>
+        <div className="premium-hero-crown">{tier === "premium" ? "👑" : meta.icon}</div>
+        <h2>100 ГРАМ {TIER_META[tier].label}</h2>
+        <p>{meta.blurb}</p>
+      </div>
+
+      <div className="tier-switch" role="tablist" aria-label="Рівень підписки">
+        {(Object.keys(TIER_META) as PremiumTier[]).map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={tier === t}
+            className={`tier-switch-btn ${tier === t ? "active" : ""}`}
+            onClick={() => setTier(t)}
+          >
+            {TIER_META[t].icon} {TIER_META[t].label}
+          </button>
+        ))}
       </div>
 
       <ul className="premium-features">
@@ -1206,17 +1263,18 @@ function PremiumTab({ user }: TabProps) {
 
       {user.isPremium && user.premiumUntil && (
         <div className="premium-chip premium-chip-active">
-          👑 Активний до {new Date(user.premiumUntil).toLocaleDateString("uk-UA")}
+          {TIER_META[user.premiumTier ?? "premium"].icon} {TIER_META[user.premiumTier ?? "premium"].label} активний до{" "}
+          {new Date(user.premiumUntil).toLocaleDateString("uk-UA")}
         </div>
       )}
       {error && <div className="auth-error" role="alert">{error}</div>}
       {success && <div className="auth-success" role="status">{success}</div>}
 
       <div className="premium-plans">
-        {PREMIUM_PLANS.map((plan) => (
+        {plans.map((plan, i) => (
           <div className={`plan-card ${plan.id === bestValueId ? "best-value" : ""}`} key={plan.id}>
             {plan.id === bestValueId && <div className="plan-badge">Найвигідніше</div>}
-            <div className="plan-icon">{planIcons[plan.id] ?? "⭐"}</div>
+            <div className="plan-icon">{planIcons[i] ?? "⭐"}</div>
             <div className="plan-label">{plan.label}</div>
             <div className="plan-price">{plan.price} 🥃</div>
             <div className="plan-meta">
@@ -1228,20 +1286,23 @@ function PremiumTab({ user }: TabProps) {
                 "за місяць"
               )}
             </div>
-            <button className="btn-primary" disabled={!!buying} onClick={() => buy(plan)}>
-              {buying === plan.id ? "Оформлення…" : user.isPremium ? "Продовжити" : "Оформити"}
+            <button className="btn-primary" disabled={!!buying || downgrade} onClick={() => buy(plan)}>
+              {buying === plan.id ? "Оформлення…" : buyLabel}
             </button>
             {axiomaLinked && (
-              <button className="btn-ghost" disabled={!!buying} onClick={() => buyWithAxioma(plan)}>
+              <button className="btn-ghost" disabled={!!buying || downgrade} onClick={() => buyWithAxioma(plan)}>
                 {buying === plan.id + ":axioma" ? "Оплата…" : `💳 ${plan.price / AXIOMA_EXCHANGE_RATE} ₴ Аксіомою`}
               </button>
             )}
           </div>
         ))}
       </div>
+      {user.premiumTier === "premium" && tier === "max" && (
+        <p className="settings-hint">Перехід на Макс діє одразу, а залишок Преміуму додається до терміну.</p>
+      )}
       {!axiomaLinked && (
         <p className="settings-hint">
-          Прив'яжи картку Аксіоми в Гаманці, щоб платити преміум напряму нею.
+          Прив'яжи картку Аксіоми в Гаманці, щоб платити за підписку напряму нею.
         </p>
       )}
     </div>

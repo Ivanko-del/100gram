@@ -1,5 +1,12 @@
 # Передача сесії — 100 ГРАМ
 
+## Найновіше: рівні підписки + модератори (потрібен ручний Publish правил!)
+
+- Підписки: «Преміум» і «Макс» 💎 (`PLANS_BY_TIER`, `TIER_LIMITS` в `constants.ts`), поле `users/{uid}.premiumTier`.
+- Адмін з профілю користувача видає/забирає підписку й призначає модератора (`grantSubscription`, `revokeSubscription`, `setSiteRole` у `firestore-api.ts`).
+- **`firestore.rules` змінились - ПОТРІБЕН РУЧНИЙ PUBLISH**: `isModerator()`, адмін може писати `isPremium/premiumUntil/premiumTier/siteRole`, власник не може змінити `siteRole`, модератор - лише `mutedGlobally`, закривати скарги й видаляти повідомлення. Тести: `npm run test:rules` (47 проходять).
+- Без Publish кнопки адміна «Видати підписку»/«Призначити модератором» дадуть помилку прав.
+
 Нотатка для наступної Claude-сесії (або для себе), що саме лишилось
 незакінченим. Гілка: `claude/telegram-100-gram-clone-fuadhq`.
 

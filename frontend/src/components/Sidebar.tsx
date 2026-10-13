@@ -43,7 +43,7 @@ import LockSetupModal from "./LockSetupModal";
 import { setChatHidden, setChatLocked } from "../data/chat-lock";
 import { useChatLock } from "../context/ChatLockContext";
 import { folderTabId } from "../utils/folders";
-import { FREE_PIN_LIMIT, PREMIUM_PIN_LIMIT, SITE_ADMIN_USERNAME, isSiteAdmin } from "../constants";
+import { SITE_ADMIN_USERNAME, TIER_LIMITS, isSiteAdmin, tierLimits } from "../constants";
 import NewChatModal from "./NewChatModal";
 
 interface SidebarProps {
@@ -371,7 +371,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                 color={user?.avatarColor ?? "#999"}
                 photoUrl={user?.avatarUrl}
                 size={72}
-                isPremium={user?.isPremium}
+                isPremium={user?.isPremium} tier={user?.premiumTier}
               />
               <button className="header-icon-btn drawer-theme-btn" onClick={toggleTheme} aria-label="Змінити тему">
                 {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
@@ -458,7 +458,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
           {results.length === 0 && !searching && <div className="empty-hint">Нікого не знайдено</div>}
           {results.map((u) => (
             <button className="chat-list-item" key={u.id} onClick={() => startChat(u.username)}>
-              <Avatar name={u.displayName} color={u.avatarColor} photoUrl={u.avatarUrl} isPremium={u.isPremium} />
+              <Avatar name={u.displayName} color={u.avatarColor} photoUrl={u.avatarUrl} isPremium={u.isPremium} tier={u.premiumTier} />
               <div className="chat-list-item-body">
                 <div className="chat-list-item-top">
                   <span className="chat-name">{u.displayName}</span>
@@ -600,13 +600,15 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
               <button
                 className="drawer-item"
                 onClick={() => {
-                  const limit = user.isPremium ? PREMIUM_PIN_LIMIT : FREE_PIN_LIMIT;
+                  const limit = tierLimits(user.premiumTier).pins;
                   if (!pinned.includes(menuChat.id) && pinned.length >= limit) {
                     setMenuChat(null);
                     setErrorMsg(
-                      user.isPremium
+                      user.premiumTier === "max"
                         ? `Можна закріпити не більше ${limit} чатів`
-                        : `Можна закріпити не більше ${limit} чатів. З преміумом — до ${PREMIUM_PIN_LIMIT} ⭐`
+                        : user.premiumTier === "premium"
+                          ? `Можна закріпити не більше ${limit} чатів. З Максом — до ${TIER_LIMITS.max.pins} 💎`
+                          : `Можна закріпити не більше ${limit} чатів. З преміумом — до ${TIER_LIMITS.premium.pins} ⭐`
                     );
                     return;
                   }

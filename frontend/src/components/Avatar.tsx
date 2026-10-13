@@ -1,14 +1,19 @@
+import { TIER_META } from "../constants";
+import type { PremiumTier } from "../types";
+
 interface AvatarProps {
   name: string;
   color: string;
   photoUrl?: string | null;
   size?: number;
   isPremium?: boolean;
+  /** Subscription level - "max" gets a diamond badge and a cyan ring */
+  tier?: PremiumTier | null;
   /** Show an emoji instead of initials/photo (e.g. 🔖 for Saved messages) */
   icon?: string;
 }
 
-export default function Avatar({ name, color, photoUrl, size = 44, isPremium, icon }: AvatarProps) {
+export default function Avatar({ name, color, photoUrl, size = 44, isPremium, tier, icon }: AvatarProps) {
   const initials = name
     .trim()
     .split(/\s+/)
@@ -20,7 +25,7 @@ export default function Avatar({ name, color, photoUrl, size = 44, isPremium, ic
 
   return (
     <div
-      className={`avatar-wrap ${isPremium ? "avatar-wrap-premium" : ""}`}
+      className={`avatar-wrap ${isPremium ? "avatar-wrap-premium" : ""} ${isPremium && tier && tier !== "premium" ? `avatar-wrap-${tier}` : ""}`}
       style={{ width: size + ringPad * 2, height: size + ringPad * 2, padding: ringPad }}
     >
       {icon ? (
@@ -34,7 +39,7 @@ export default function Avatar({ name, color, photoUrl, size = 44, isPremium, ic
           {initials || "?"}
         </div>
       )}
-      {isPremium && <span className="avatar-premium-badge">⭐</span>}
+      {isPremium && <span className="avatar-premium-badge">{tier ? TIER_META[tier].icon : "⭐"}</span>}
     </div>
   );
 }

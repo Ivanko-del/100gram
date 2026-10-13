@@ -4005,3 +4005,107 @@ summary:focus-visible {
   gap: 8px;
   flex-wrap: wrap;
 }
+
+/* ---------- Subscription tiers ---------- */
+.tier-switch {
+  flex-wrap: wrap;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-input);
+  border-radius: 14px;
+}
+
+.tier-switch-btn {
+  flex: 1 0 auto;
+  white-space: nowrap;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tier-switch-btn.active {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+.premium-hero-max {
+  background: linear-gradient(160deg, rgba(90, 210, 255, 0.16), rgba(150, 110, 255, 0.1) 55%, transparent);
+  border-color: rgba(110, 200, 255, 0.4);
+}
+
+.premium-hero-max h2 {
+  background: linear-gradient(90deg, #6fe3ff, #a98bff);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.avatar-wrap-max {
+  background: conic-gradient(from 180deg, #6fe3ff, #a98bff, #6fe3ff, #d8f6ff, #6fe3ff);
+  box-shadow: 0 0 10px rgba(110, 200, 255, 0.5);
+}
+
+.avatar-wrap-max .avatar-premium-badge {
+  background: linear-gradient(135deg, #6fe3ff, #a98bff);
+  box-shadow: 0 0 6px rgba(110, 200, 255, 0.6);
+}
+
+/* ---------- Staff controls ---------- */
+.moderator-badge {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.admin-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.admin-row {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-row > * {
+  flex: 1;
+}
+
+.premium-hero-axioma {
+  background: linear-gradient(160deg, rgba(80, 220, 160, 0.16), rgba(40, 160, 120, 0.08) 55%, transparent);
+  border-color: rgba(80, 220, 160, 0.4);
+}
+
+.premium-hero-slotok {
+  background: linear-gradient(160deg, rgba(255, 90, 120, 0.16), rgba(255, 170, 60, 0.08) 55%, transparent);
+  border-color: rgba(255, 110, 110, 0.4);
+}
+
+.avatar-wrap-axioma {
+  background: conic-gradient(from 180deg, #4cd98a, #1f9d74, #4cd98a, #c9ffe4, #4cd98a);
+  box-shadow: 0 0 10px rgba(76, 217, 138, 0.5);
+}
+
+.avatar-wrap-slotok {
+  background: conic-gradient(from 180deg, #ff5a78, #ffb03c, #ff5a78, #ffe0b0, #ff5a78);
+  box-shadow: 0 0 10px rgba(255, 110, 110, 0.5);
+}
+
+.avatar-wrap-axioma .avatar-premium-badge {
+  background: linear-gradient(135deg, #4cd98a, #1f9d74);
+  box-shadow: 0 0 6px rgba(76, 217, 138, 0.6);
+}
+
+.avatar-wrap-slotok .avatar-premium-badge {
+  background: linear-gradient(135deg, #ff5a78, #ffb03c);
+  box-shadow: 0 0 6px rgba(255, 110, 110, 0.6);
+}

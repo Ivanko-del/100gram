@@ -19,7 +19,10 @@ export interface User {
   avatarColor: string;
   avatarUrl?: string | null;
   isPremium: boolean;
+  /** Active subscription level; null when no active subscription */
+  premiumTier?: PremiumTier | null;
   premiumUntil?: string | null;
+  siteRole?: SiteRole | null;
   grams: number;
   mutedGlobally?: boolean;
   /** Optional, ISO date (YYYY-MM-DD) */
@@ -57,6 +60,7 @@ export interface PublicUser {
   avatarColor: string;
   avatarUrl?: string | null;
   isPremium: boolean;
+  premiumTier?: PremiumTier | null;
   lastSeenAt?: string;
   emojiStatus?: string | null;
   nameColor?: string | null;
@@ -134,8 +138,16 @@ export interface ChatMessage {
   forwardedFrom?: string | null;
 }
 
+/** Subscription levels. "axioma" / "slotok" are partner-product tiers: Преміум-level
+ * limits plus their own badge and a ГРАМ cashback on Аксіома card top-ups. */
+export type PremiumTier = "premium" | "max" | "axioma" | "slotok";
+
+/** Staff role handed out by the site admin (the admin itself is hardcoded). */
+export type SiteRole = "moderator";
+
 export interface PremiumPlan {
   id: string;
+  tier: PremiumTier;
   label: string;
   days: number;
   price: number;

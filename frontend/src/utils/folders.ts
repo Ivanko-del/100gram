@@ -1,8 +1,8 @@
-import { FREE_FOLDER_LIMIT, MAX_FOLDER_NAME, PREMIUM_FOLDER_LIMIT } from "../constants";
-import type { ChatFolder } from "../types";
+import { MAX_FOLDER_NAME, tierLimits } from "../constants";
+import type { ChatFolder, PremiumTier } from "../types";
 
-export function folderLimit(isPremium: boolean): number {
-  return isPremium ? PREMIUM_FOLDER_LIMIT : FREE_FOLDER_LIMIT;
+export function folderLimit(tier: PremiumTier | null | undefined): number {
+  return tierLimits(tier).folders;
 }
 
 /** Id of a folder's tab in the chat list filter (built-in tabs have no prefix). */

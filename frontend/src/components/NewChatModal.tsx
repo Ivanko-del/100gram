@@ -123,7 +123,7 @@ export default function NewChatModal({ contacts = [], onClose, onCreated }: Prop
   function ContactRow({ u, onPick }: { u: PublicUser; onPick: (u: PublicUser) => void }) {
     return (
       <button type="button" className="newchat-row" onClick={() => onPick(u)} disabled={opening}>
-        <Avatar name={u.displayName} color={u.avatarColor} photoUrl={u.avatarUrl} isPremium={u.isPremium} size={48} />
+        <Avatar name={u.displayName} color={u.avatarColor} photoUrl={u.avatarUrl} isPremium={u.isPremium} tier={u.premiumTier} size={48} />
         <div className="newchat-row-body">
           <div className="newchat-row-name">{u.displayName}</div>
           <div className="newchat-row-sub">@{u.username}</div>
