@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Archive,
@@ -510,9 +510,15 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                   : "Немає чатів. Знайдіть друга через пошук ☝️"}
             </div>
           )}
-          {!(showVault && hasPassword && !unlocked) && filteredChats.map((chat) => (
+          {!(showVault && hasPassword && !unlocked) && filteredChats.map((chat, i) => (
+            <Fragment key={chat.id}>
+            {!showArchive && !showVault && !searchText && i === 0 && pinned.includes(chat.id) && (
+              <div className="chat-section-label"><Pin size={11} /> Закріплені</div>
+            )}
+            {!showArchive && !showVault && !searchText && i > 0 && pinned.includes(filteredChats[i - 1].id) && !pinned.includes(chat.id) && (
+              <div className="chat-section-divider" role="separator" />
+            )}
             <button
-              key={chat.id}
               className={`chat-list-item ${chat.id === activeChatId ? "active" : ""}`}
               onClick={() => openChat(chat)}
               onContextMenu={(e) => {
@@ -562,6 +568,7 @@ export default function Sidebar({ chats, activeChatId, onChatCreated }: SidebarP
                 </div>
               </div>
             </button>
+            </Fragment>
           ))}
         </div>
       </div>
